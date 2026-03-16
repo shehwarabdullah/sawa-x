@@ -1,0 +1,57 @@
+module Sawa.Yield.ProductionReport where
+
+import Sawa.Types
+import Sawa.Token.SPVToken
+
+template ProductionReport
+  with
+    operator          : Party
+    spvParty          : Party
+    projectId         : Text
+    periodStart       : Text
+    periodEnd         : Text
+    kWhProduced       : Decimal
+    revenueGenerated  : Decimal
+    distributed       : Bool
+  where
+    signatory operator
+    observer spvParty
+
+    choice AllocateYield : ContractId ClaimableYield
+      with
+        registryCid   : ContractId SPVTokenRegistry
+        investorParty : Party
+      controller operator
+      do
+        registry <- fetch registryCid
+        assertMsg "SPV mismatch" (registry.projectId == this.projectId)
+        assertMsg "Already distributed" (not this.distributed)
+        let investorBalance = lookupBalance registry.holdings investorParty
+        assertMsg "Investor holds no tokens" (investorBalance > 0.0)
+        let yieldAmount =
+              (investorBalance / registry.totalSupply) * this.revenueGenerated
+        _ <- create this with distributed = True
+        create ClaimableYield with
+          operator
+          investor  = investorParty
+          spvParty  = this.spvParty
+          projectId = this.projectId
+          amount    = yieldAmount
+          periodEnd = this.periodEnd
+
+template ClaimableYield
+  with
+    operator  : Party
+    investor  : Party
+    spvParty  : Party
+    projectId : Text
+    amount    : Decimal
+    periodEnd : Text
+  where
+    signatory operator
+    observer investor
+
+    -- In production, this triggers a CIP-56 USDCx transfer via a bot
+    choice Claim : ()
+      controller investor
+      do return ()

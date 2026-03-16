@@ -1,0 +1,138 @@
+module Test.Scenarios where
+
+import Daml.Script
+import Sawa.Types
+import Sawa.Identity.UserRole
+import Sawa.Portfolio.RegionalPortfolio
+import Sawa.Asset.ProjectSPV
+import Sawa.Token.SPVToken
+import Sawa.Investment.InvestmentRequest
+import Sawa.Investment.AccessRequest
+import Sawa.Yield.ProductionReport
+
+setup : Script ()
+setup = script do
+  -- ── 1. Allocate Parties ─────────────────────────────────────────
+  admin    <- allocatePartyWithHint "Admin"       (PartyIdHint "Admin")
+  operator <- allocatePartyWithHint "Operator"    (PartyIdHint "Operator")
+  investor <- allocatePartyWithHint "Investor"    (PartyIdHint "Investor")
+  spvParty <- allocatePartyWithHint "SPV_METALEX" (PartyIdHint "SPV_METALEX")
+
+  -- ── 2. Investor submits KYC request ─────────────────────────────
+  kycCid <- submit investor do
+    createCmd KYCRequest with
+      investor
+      admin
+      fullName         = "Alice Mwangi"
+      walletAddress    = "0xAlice123"
+      requestedRegions = ["South Africa"]
+
+  -- ── 3. Admin approves KYC → UserRole created ────────────────────
+  userRoleCid <- submit admin do
+    exerciseCmd kycCid ApproveKYC
+
+  -- ── 4. Admin creates Regional Portfolio ─────────────────────────
+  portfolioCid <- submit admin do
+    createCmd RegionalPortfolio with
+      admin
+      operator
+      region              = "South Africa"
+      portfolioName       = "SA Solar Portfolio"
+      authorizedInvestors = []
+      projects            = []
+      archived            = False
+
+  -- ── 5. Admin allocates portfolio to investor ─────────────────────
+  portfolioCid <- submit admin do
+    exerciseCmd portfolioCid AddInvestor with investor
+
+  -- ── 6. Operator creates SPV project (Draft) ──────────────────────
+  projectCid <- submit operator do
+    createCmd ProjectSPV with
+      operator
+      admin
+      spvParty
+      projectId     = "METALEX-001"
+      projectName   = "METALEX 4MW Solar"
+      region        = "South Africa"
+      trancheNumber = Some 1
+      capacityMW    = 4.0
+      ppaTariff     = 0.15
+      fundingTarget = 1_000_000.0
+      fundingRaised = 0.0
+      state         = Draft
+      tokenSymbol   = "METALEX-T1"
+      tokenPrice    = 1.0
+
+  -- ── 7. SPV Token Registry ─────────────────────────────────────────
+  registryCid <- submit operator do
+    createCmd SPVTokenRegistry with
+      operator
+      spvParty
+      projectId   = "METALEX-001"
+      totalSupply = 0.0
+      holdings    = []
+
+  -- ── 8. Operator proposes project ──────────────────────────────────
+  projectCid <- submit operator do exerciseCmd projectCid Propose
+
+  -- ── 9. Admin approves proposal ────────────────────────────────────
+  projectCid <- submit admin do exerciseCmd projectCid Approve
+
+  -- ── 10. Investor requests access ──────────────────────────────────
+  accessReqCid <- submit investor do
+    createCmd AccessRequest with
+      investor
+      admin
+      investorName = "Alice Mwangi"
+      region       = "South Africa"
+      purpose      = "Reviewing renewable energy investment opportunities"
+
+  -- ── 11. Admin approves access ─────────────────────────────────────
+  _approvalCid <- submit admin do
+    exerciseCmd accessReqCid ApproveAccess
+
+  -- ── 12. Operator opens funding ────────────────────────────────────
+  projectCid <- submit operator do exerciseCmd projectCid OpenFunding
+
+  -- ── 13. Investor places investment ────────────────────────────────
+  investReqCid <- submit investor do
+    createCmd InvestmentRequest with
+      investor
+      operator
+      spvParty
+      projectId       = "METALEX-001"
+      tokenSymbol     = "METALEX-T1"
+      usdcxHoldingCid = "holding-alice-001"
+      requestedTokens = 10_000.0
+      usdcxAmount     = 10_000.0
+
+  (_tokenCid, registryCid, projectCid) <- submit operator do
+    exerciseCmd investReqCid Accept with registryCid, projectCid
+
+  -- ── 14. Operator closes funding & makes operational ───────────────
+  projectCid <- submit operator do exerciseCmd projectCid CloseFunding
+  _projectCid <- submit operator do exerciseCmd projectCid MakeOperational
+
+  -- ── 15. Operator submits production report ────────────────────────
+  reportCid <- submit operator do
+    createCmd ProductionReport with
+      operator
+      spvParty
+      projectId        = "METALEX-001"
+      periodStart      = "2026-01-01"
+      periodEnd        = "2026-01-31"
+      kWhProduced      = 50_000.0
+      revenueGenerated = 7_500.0
+      distributed      = False
+
+  -- ── 16. Yield allocation & claim ──────────────────────────────────
+  yieldCid <- submit operator do
+    exerciseCmd reportCid AllocateYield with
+      registryCid
+      investorParty = investor
+
+  submit investor do
+    exerciseCmd yieldCid Claim
+
+  return ()

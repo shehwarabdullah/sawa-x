@@ -1,0 +1,143 @@
+module Test.SetupContracts where
+
+import Daml.Script
+import DA.List (find)
+import Sawa.Types
+import Sawa.Identity.UserRole
+import Sawa.Portfolio.RegionalPortfolio
+import Sawa.Asset.ProjectSPV
+import Sawa.Token.SPVToken
+import Sawa.Investment.InvestmentRequest
+import Sawa.Investment.AccessRequest
+import Sawa.Yield.ProductionReport
+
+setupContracts : Script ()
+setupContracts = script do
+  -- Get already-allocated parties by display name
+  parties <- listKnownParties
+  let findParty name = case find (\p -> p.displayName == Some name) parties of
+        Some p -> p.party
+        None   -> error ("Party not found: " <> name)
+
+  let admin    = findParty "Admin"
+  let operator = findParty "Operator"
+  let investor = findParty "Investor"
+  let spvParty = findParty "SPV_METALEX"
+
+  -- 1. KYC Request
+  kycCid <- submit investor do
+    createCmd KYCRequest with
+      investor
+      admin
+      fullName         = "Alice Mwangi"
+      walletAddress    = "0xAlice123"
+      requestedRegions = ["South Africa"]
+
+  -- 2. Admin approves KYC
+  _userRoleCid <- submit admin do
+    exerciseCmd kycCid ApproveKYC
+
+  -- 3. Regional Portfolio
+  portfolioCid <- submit admin do
+    createCmd RegionalPortfolio with
+      admin
+      operator
+      region              = "South Africa"
+      portfolioName       = "SA Solar Portfolio"
+      authorizedInvestors = []
+      projects            = []
+      archived            = False
+
+  -- 4. Add investor to portfolio
+  portfolioCid <- submit admin do
+    exerciseCmd portfolioCid AddInvestor with investor
+
+  -- 5. Create SPV Project
+  projectCid <- submit operator do
+    createCmd ProjectSPV with
+      operator
+      admin
+      spvParty
+      projectId     = "METALEX-001"
+      projectName   = "METALEX 4MW Solar"
+      region        = "South Africa"
+      trancheNumber = Some 1
+      capacityMW    = 4.0
+      ppaTariff     = 0.15
+      fundingTarget = 1000000.0
+      fundingRaised = 0.0
+      state         = Draft
+      tokenSymbol   = "METALEX-T1"
+      tokenPrice    = 1.0
+
+  -- 6. Token Registry
+  registryCid <- submit operator do
+    createCmd SPVTokenRegistry with
+      operator
+      spvParty
+      projectId   = "METALEX-001"
+      totalSupply = 0.0
+      holdings    = []
+
+  -- 7. Propose -> Approve
+  projectCid <- submit operator do exerciseCmd projectCid Propose
+  projectCid <- submit admin do exerciseCmd projectCid Approve
+
+  -- 8. Investor requests access
+  accessReqCid <- submit investor do
+    createCmd AccessRequest with
+      investor
+      admin
+      investorName = "Alice Mwangi"
+      region       = "South Africa"
+      purpose      = "Reviewing renewable energy investment opportunities"
+
+  -- 9. Admin approves access
+  _approvalCid <- submit admin do
+    exerciseCmd accessReqCid ApproveAccess
+
+  -- 10. Open funding
+  projectCid <- submit operator do exerciseCmd projectCid OpenFunding
+
+  -- 11. Invest
+  investReqCid <- submit investor do
+    createCmd InvestmentRequest with
+      investor
+      operator
+      spvParty
+      projectId       = "METALEX-001"
+      tokenSymbol     = "METALEX-T1"
+      usdcxHoldingCid = "holding-alice-001"
+      requestedTokens = 10000.0
+      usdcxAmount     = 10000.0
+
+  (_tokenCid, registryCid, projectCid) <- submit operator do
+    exerciseCmd investReqCid Accept with registryCid, projectCid
+
+  -- 12. Close funding -> Operational
+  projectCid <- submit operator do exerciseCmd projectCid CloseFunding
+  _projectCid <- submit operator do exerciseCmd projectCid MakeOperational
+
+  -- 13. Production Report
+  reportCid <- submit operator do
+    createCmd ProductionReport with
+      operator
+      spvParty
+      projectId        = "METALEX-001"
+      periodStart      = "2026-01-01"
+      periodEnd        = "2026-01-31"
+      kWhProduced      = 50000.0
+      revenueGenerated = 7500.0
+      distributed      = False
+
+  -- 14. Allocate yield
+  yieldCid <- submit operator do
+    exerciseCmd reportCid AllocateYield with
+      registryCid
+      investorParty = investor
+
+  -- 15. Claim yield
+  submit investor do
+    exerciseCmd yieldCid Claim
+
+  return ()

@@ -1,0 +1,51 @@
+module Sawa.Investment.InvestmentRequest where
+
+import Sawa.Types
+import Sawa.Token.SPVToken
+import Sawa.Asset.ProjectSPV
+
+template InvestmentRequest
+  with
+    investor         : Party
+    operator         : Party
+    spvParty         : Party
+    projectId        : Text
+    tokenSymbol      : Text
+    usdcxHoldingCid  : Text
+    requestedTokens  : Decimal
+    usdcxAmount      : Decimal
+  where
+    signatory investor
+    observer operator
+
+    choice Accept
+      : (ContractId SPVToken, ContractId SPVTokenRegistry, ContractId ProjectSPV)
+      with
+        registryCid : ContractId SPVTokenRegistry
+        projectCid  : ContractId ProjectSPV
+      controller operator
+      do
+        tokenCid <- create SPVToken with
+          operator
+          owner    = investor
+          spvParty
+          projectId
+          symbol   = tokenSymbol
+          amount   = requestedTokens
+
+        newRegistryCid <- exercise registryCid RegisterMint with
+          investor
+          amount = requestedTokens
+
+        newProjectCid <- exercise projectCid UpdateFundingRaised with
+          amount = usdcxAmount
+
+        return (tokenCid, newRegistryCid, newProjectCid)
+
+    choice RejectRequest : ()
+      controller operator
+      do return ()
+
+    choice CancelRequest : ()
+      controller investor
+      do return ()

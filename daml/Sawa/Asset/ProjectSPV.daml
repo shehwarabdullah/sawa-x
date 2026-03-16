@@ -1,0 +1,67 @@
+module Sawa.Asset.ProjectSPV where
+
+import Sawa.Types
+
+template ProjectSPV
+  with
+    operator      : Party
+    admin         : Party
+    spvParty      : Party
+    projectId     : Text
+    projectName   : Text
+    region        : Region
+    trancheNumber : Optional Int
+    capacityMW    : Decimal
+    ppaTariff     : Decimal
+    fundingTarget : Decimal
+    fundingRaised : Decimal
+    state         : SPVState
+    tokenSymbol   : Text
+    tokenPrice    : Decimal
+  where
+    signatory operator
+    observer admin, spvParty
+
+    choice Propose : ContractId ProjectSPV
+      controller operator
+      do
+        assertMsg "State must be Draft" (state == Draft)
+        create this with state = Proposed
+
+    choice Approve : ContractId ProjectSPV
+      controller admin
+      do
+        assertMsg "State must be Proposed" (state == Proposed)
+        create this with state = Approved
+
+    choice Reject : ContractId ProjectSPV
+      controller admin
+      do
+        assertMsg "State must be Proposed" (state == Proposed)
+        create this with state = Draft
+
+    choice OpenFunding : ContractId ProjectSPV
+      controller operator
+      do
+        assertMsg "State must be Approved" (state == Approved)
+        create this with state = FundingOpen
+
+    choice CloseFunding : ContractId ProjectSPV
+      controller operator
+      do
+        assertMsg "State must be FundingOpen" (state == FundingOpen)
+        create this with state = Funded
+
+    choice MakeOperational : ContractId ProjectSPV
+      controller operator
+      do
+        assertMsg "State must be Funded" (state == Funded)
+        create this with state = Operational
+
+    choice UpdateFundingRaised : ContractId ProjectSPV
+      with amount : Decimal
+      controller operator
+      do
+        let newRaised = fundingRaised + amount
+        assertMsg "Funding target exceeded" (newRaised <= fundingTarget)
+        create this with fundingRaised = newRaised

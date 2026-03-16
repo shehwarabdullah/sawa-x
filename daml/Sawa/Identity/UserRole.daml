@@ -1,0 +1,64 @@
+module Sawa.Identity.UserRole where
+
+import Sawa.Types
+
+-- Investor submits this; Admin approves → creates UserRole
+template KYCRequest
+  with
+    investor    : Party
+    admin       : Party
+    fullName    : Text
+    walletAddress : Text
+    requestedRegions : [Region]
+  where
+    signatory investor
+    observer admin
+
+    choice ApproveKYC : ContractId UserRole
+      controller admin
+      do
+        create UserRole with
+          admin
+          investor
+          walletAddress
+          fullName
+          authorizedRegions = requestedRegions
+          kycVerified = True
+
+    choice RejectKYC : ()
+      controller admin
+      do return ()
+
+-- Created by admin after KYC approval
+template UserRole
+  with
+    admin           : Party
+    investor        : Party
+    walletAddress   : Text
+    fullName        : Text
+    authorizedRegions : [Region]
+    kycVerified     : Bool
+  where
+    signatory admin
+    observer investor
+    ensure kycVerified == True
+
+    choice RevokeAccess : ()
+      controller admin
+      do return ()
+
+    choice AddRegion : ContractId UserRole
+      with newRegion : Region
+      controller admin
+      do create this with authorizedRegions = newRegion :: authorizedRegions
+
+template SPVIdentity
+  with
+    operator    : Party
+    admin       : Party
+    spvParty    : Party
+    projectId   : Text
+    projectName : Text
+  where
+    signatory operator
+    observer spvParty, admin

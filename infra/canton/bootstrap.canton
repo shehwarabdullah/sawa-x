@@ -1,0 +1,25 @@
+// ─── Sawa-X Canton Sandbox Bootstrap ─────────────────────────────────────────
+// Run with:  canton --config infra/canton/canton-local.conf \
+//                   --bootstrap infra/canton/bootstrap.canton
+
+// 1. Connect participant to local domain
+participant1.domains.connect_local(local)
+
+// 2. Allocate parties
+val admin    = participant1.parties.allocate("Admin",       Some("Admin"))
+val operator = participant1.parties.allocate("Operator",    Some("Operator"))
+val investor = participant1.parties.allocate("Investor",    Some("Investor"))
+val spv      = participant1.parties.allocate("SPV_METALEX", Some("SPV_METALEX"))
+
+// 3. Upload the compiled DAR
+val dar = participant1.dars.upload("target/sawa-x-1.0.0.dar")
+
+// 4. Print party IDs (needed for UI config)
+println(s"✅  Admin    : ${admin}")
+println(s"✅  Operator : ${operator}")
+println(s"✅  Investor : ${investor}")
+println(s"✅  SPV      : ${spv}")
+println(s"✅  DAR      : ${dar}")
+println("")
+println("Now start the JSON API gateway:")
+println("  java -jar daml-json-api.jar --ledger-host localhost --ledger-port 6865 --http-port 7575")

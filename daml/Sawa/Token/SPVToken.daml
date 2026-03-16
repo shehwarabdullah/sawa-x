@@ -1,0 +1,63 @@
+module Sawa.Token.SPVToken where
+
+import Sawa.Types
+
+template SPVToken
+  with
+    operator : Party
+    owner    : Party
+    spvParty : Party
+    projectId : Text
+    symbol   : Text
+    amount   : Decimal
+  where
+    signatory operator
+    observer owner, spvParty
+
+    choice Transfer : ContractId SPVToken
+      with newOwner : Party
+      controller operator
+      do create this with owner = newOwner
+
+    choice Burn : ()
+      controller operator
+      do return ()
+
+    choice Split : (ContractId SPVToken, ContractId SPVToken)
+      with splitAmount : Decimal
+      controller owner
+      do
+        assertMsg "Split amount must be positive" (splitAmount > 0.0)
+        assertMsg "Insufficient balance" (amount > splitAmount)
+        c1 <- create this with amount = splitAmount
+        c2 <- create this with amount = amount - splitAmount
+        return (c1, c2)
+
+template SPVTokenRegistry
+  with
+    operator    : Party
+    spvParty    : Party
+    projectId   : Text
+    totalSupply : Decimal
+    holdings    : [(Party, Decimal)]
+  where
+    signatory operator
+    observer spvParty
+
+    choice RegisterMint : ContractId SPVTokenRegistry
+      with investor : Party; amount : Decimal
+      controller operator
+      do
+        let newTotalSupply = totalSupply + amount
+        let newHoldings    = upsertBalance holdings investor amount
+        create this with totalSupply = newTotalSupply, holdings = newHoldings
+
+    choice RegisterBurn : ContractId SPVTokenRegistry
+      with investor : Party; amount : Decimal
+      controller operator
+      do
+        let investorBal = lookupBalance holdings investor
+        assertMsg "Insufficient tokens to burn" (investorBal >= amount)
+        let newTotalSupply = totalSupply - amount
+        let newHoldings    = upsertBalance holdings investor (investorBal - amount - investorBal)
+        create this with totalSupply = newTotalSupply, holdings = newHoldings

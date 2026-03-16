@@ -1,0 +1,44 @@
+module Sawa.Investment.AccessRequest where
+
+-- Investor submits an on-ledger request to view projects in a region.
+-- Admin approves → AccessApproval contract is created, which the UI
+-- uses as the gate to render the Projects view.
+
+template AccessRequest
+  with
+    investor     : Party
+    admin        : Party
+    investorName : Text
+    region       : Text
+    purpose      : Text
+  where
+    signatory investor
+    observer admin
+
+    choice ApproveAccess : ContractId AccessApproval
+      controller admin
+      do
+        create AccessApproval with
+          investor
+          admin
+          region
+          grantedAt = "now"   -- wall-clock set by operator in prod
+
+    choice RejectAccess : ()
+      controller admin
+      do return ()
+
+-- Proof of access – investor can observe; admin is signatory
+template AccessApproval
+  with
+    investor  : Party
+    admin     : Party
+    region    : Text
+    grantedAt : Text
+  where
+    signatory admin
+    observer investor
+
+    choice RevokeApproval : ()
+      controller admin
+      do return ()

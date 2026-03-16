@@ -1,0 +1,46 @@
+module Sawa.Portfolio.RegionalPortfolio where
+
+import Sawa.Types
+
+template RegionalPortfolio
+  with
+    admin               : Party
+    operator            : Party
+    region              : Region
+    portfolioName       : Text
+    authorizedInvestors : [Party]
+    projects            : [Text]
+    archived            : Bool
+  where
+    signatory admin
+    observer operator, authorizedInvestors
+
+    choice AddInvestor : ContractId RegionalPortfolio
+      with investor : Party
+      controller admin
+      do create this with authorizedInvestors = investor :: authorizedInvestors
+
+    choice RemoveInvestor : ContractId RegionalPortfolio
+      with investor : Party
+      controller admin
+      do create this with
+           authorizedInvestors = filter (/= investor) authorizedInvestors
+
+    choice AddProject : ContractId RegionalPortfolio
+      with projectId : Text
+      controller admin
+      do create this with projects = projectId :: projects
+
+    choice RemoveProject : ContractId RegionalPortfolio
+      with projectId : Text
+      controller admin
+      do create this with projects = filter (/= projectId) projects
+
+    choice ArchivePortfolio : ContractId RegionalPortfolio
+      controller admin
+      do create this with archived = True
+
+    choice UpdateRegion : ContractId RegionalPortfolio
+      with newRegion : Region
+      controller admin
+      do create this with region = newRegion

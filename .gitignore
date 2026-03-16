@@ -1,0 +1,9 @@
+node_modules/
+.daml/
+target/
+dist/
+.vite/
+*.dar
+ui/node_modules/
+ui/dist/
+.env

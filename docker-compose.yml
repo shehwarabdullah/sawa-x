@@ -1,0 +1,61 @@
+version: "3.9"
+
+# ─── Sawa-X Local Sandbox (Canton 2.10 + JSON API + UI) ──────────────────────
+#
+# Usage:
+#   1. Build DAR first:   daml build
+#   2. Start sandbox:     docker compose up
+#   3. Open UI:           http://localhost:3000
+#
+# All data is in-memory; containers reset on restart.
+
+services:
+
+  # ── Canton Sandbox (single participant + domain) ─────────────────────────────
+  canton:
+    image: digitalasset/canton-open-source:2.10.3
+    command:
+      - daemon
+      - --config=/canton/canton-local.conf
+      - --bootstrap=/canton/bootstrap.canton
+    volumes:
+      - ./infra/canton:/canton:ro
+      - ./target:/target:ro          # compiled .dar lives here
+    ports:
+      - "6865:6865"   # Ledger API (gRPC)
+      - "6866:6866"   # Admin API
+      - "6867:6867"   # Domain public API
+      - "6868:6868"   # Domain admin API
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=:6865"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ── Daml JSON API Gateway ─────────────────────────────────────────────────────
+  json-api:
+    image: digitalasset/http-json:2.10.3
+    depends_on:
+      canton:
+        condition: service_healthy
+    command:
+      - --ledger-host=canton
+      - --ledger-port=6865
+      - --http-port=7575
+      - --allow-insecure-tokens
+    ports:
+      - "7575:7575"
+
+  # ── React UI (dev server via Node) ───────────────────────────────────────────
+  ui:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./ui:/app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - json-api
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_LEDGER_URL=http://json-api:7575

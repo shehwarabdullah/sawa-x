@@ -1,0 +1,23 @@
+module Sawa.Types where
+
+type Region = Text
+
+data SPVState
+  = Draft
+  | Proposed
+  | Approved
+  | FundingOpen
+  | Funded
+  | Operational
+  deriving (Eq, Show)
+
+lookupBalance : [(Party, Decimal)] -> Party -> Decimal
+lookupBalance [] _ = 0.0
+lookupBalance ((p, bal) :: rest) target =
+  if p == target then bal else lookupBalance rest target
+
+upsertBalance : [(Party, Decimal)] -> Party -> Decimal -> [(Party, Decimal)]
+upsertBalance [] party amount = [(party, amount)]
+upsertBalance ((p, bal) :: rest) party amount =
+  if p == party then (p, bal + amount) :: rest
+  else (p, bal) :: upsertBalance rest party amount
