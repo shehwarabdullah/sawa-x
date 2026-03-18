@@ -5,9 +5,9 @@ import Modal from '../../components/Modal';
 import { queryContracts, createContract, exerciseChoice, TMPL } from '../../api/ledger';
 import { useApp } from '../../context/AppContext';
 
-const OPERATOR_PARTY = 'Operator::1220e8d65081ace02e5f0a6781151f7990ffab43114dea256334e19b87cfb8b52f31';
-const INVESTOR_PARTY = 'Investor::1220e8d65081ace02e5f0a6781151f7990ffab43114dea256334e19b87cfb8b52f31';
-const SPV_PARTY      = 'SPV_METALEX::1220e8d65081ace02e5f0a6781151f7990ffab43114dea256334e19b87cfb8b52f31';
+const OPERATOR_PARTY = 'Operator::1220e91ad516d0621a2c079e9f7adb09045bc330946156cf9a2595212bf814c22d60';
+const INVESTOR_PARTY = 'Investor::1220e91ad516d0621a2c079e9f7adb09045bc330946156cf9a2595212bf814c22d60';
+const SPV_PARTY      = 'SPV_METALEX::1220e91ad516d0621a2c079e9f7adb09045bc330946156cf9a2595212bf814c22d60';
 
 const DEFAULT = {
   projectId:        'METALEX-001',

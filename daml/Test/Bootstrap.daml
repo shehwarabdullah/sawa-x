@@ -1,0 +1,17 @@
+module Test.Bootstrap where
+
+import Daml.Script
+
+bootstrap : Script ()
+bootstrap = script do
+  -- Core parties
+  _admin     <- allocatePartyWithHint "Admin"       (PartyIdHint "Admin")
+  _operator  <- allocatePartyWithHint "Operator"    (PartyIdHint "Operator")
+  _spv       <- allocatePartyWithHint "SPV_METALEX" (PartyIdHint "SPV_METALEX")
+
+  -- Multiple investors
+  _investor1 <- allocatePartyWithHint "Investor1"   (PartyIdHint "Investor1")
+  _investor2 <- allocatePartyWithHint "Investor2"   (PartyIdHint "Investor2")
+  _investor3 <- allocatePartyWithHint "Investor3"   (PartyIdHint "Investor3")
+
+  return ()

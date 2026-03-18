@@ -1,62 +1,119 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { FileCheck, Briefcase, TrendingUp } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import StatCard from '../../components/StatCard';
-import { mock, useApp } from '../../context/AppContext';
+import { queryContracts, TMPL } from '../../api/ledger';
+import { useApp } from '../../context/AppContext';
 
 export default function InvestorDashboard() {
-  const { partyId, refresh } = useApp();
-  void refresh;
-  const s = mock.store;
+  const { partyId, partyName, refresh, hash } = useApp();
 
-  const myRole      = s.userRoles.find(r => r.investor === partyId);
-  const myApprovals = s.accessApprovals.filter(a => a.investor === partyId);
-  const myYields    = s.claimableYields.filter(y => y.investor === partyId);
-  const myReg       = s.registries.find(r => r.holdings.some(([p]) => p === partyId));
-  const myTokens    = myReg?.holdings.find(([p]) => p === partyId)?.[1] ?? 0;
+  const [myRole,     setMyRole]     = useState<any | null>(null);
+  const [myApproval, setMyApproval] = useState<any | null>(null);
+  const [myTokens,   setMyTokens]   = useState<any[]>([]);
+  const [myYields,   setMyYields]   = useState<any[]>([]);
+  const [kycPending, setKycPending] = useState(false);
+  const [accPending, setAccPending] = useState(false);
+  const [loading,    setLoading]    = useState(true);
+
+  useEffect(() => {
+    if (!hash) return;
+    setLoading(true);
+    Promise.all([
+      queryContracts('Investor', TMPL.UserRole),
+      queryContracts('Investor', TMPL.KYCRequest),
+      queryContracts('Investor', TMPL.AccessApproval),
+      queryContracts('Investor', TMPL.AccessRequest),
+      queryContracts('Investor', TMPL.SPVToken),
+      queryContracts('Investor', TMPL.ClaimableYield),
+    ]).then(([roles, kycReqs, approvals, accessReqs, tokens, yields]) => {
+      setMyRole(roles.find(r => r.payload.investor === partyId) ?? null);
+      setKycPending(kycReqs.some(r => r.payload.investor === partyId));
+      setMyApproval(approvals.find(a => a.payload.investor === partyId) ?? null);
+      setAccPending(accessReqs.some(r => r.payload.investor === partyId));
+      setMyTokens(tokens.filter(t => t.payload.owner === partyId));
+      setMyYields(yields.filter(y => y.payload.investor === partyId));
+    })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [refresh, partyId, hash]);
+
+  const totalTokens = myTokens.reduce((s, t) => s + Number(t.payload.amount), 0);
+  const totalYield  = myYields.reduce((s, y) => s + Number(y.payload.amount), 0);
 
   return (
     <div>
-      <PageHeader title="Investor Dashboard" subtitle="View your investments and claimable yield" />
+      <PageHeader
+        title={`Investor Dashboard — ${partyName}`}
+        subtitle="Your investment status and portfolio summary"
+      />
       <div className="px-6 pb-6 space-y-6">
 
-        {/* KYC status */}
+        {/* Investor identity card */}
         <div className="card p-4 flex items-center gap-4">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center
-            ${myRole ? 'bg-emerald-900/40' : 'bg-slate-800'}`}>
-            <span className="text-lg">{myRole ? '✓' : '⏳'}</span>
+          <div className="w-12 h-12 rounded-xl bg-emerald-900/40 flex items-center
+            justify-center text-emerald-300 text-lg font-bold">
+            {partyName.replace('Investor', 'I')}
           </div>
-          <div>
-            <p className="text-sm font-medium text-white">
-              {myRole ? `KYC Verified – ${myRole.fullName}` : 'KYC Not Yet Approved'}
-            </p>
-            <p className="text-xs text-slate-500">
-              {myRole
-                ? `Wallet: ${myRole.walletAddress} · Regions: ${myRole.authorizedRegions.join(', ')}`
-                : 'Switch to the Investor role and submit a KYC request'}
-            </p>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-white">{partyName}</p>
+            {myRole ? (
+              <>
+                <p className="text-xs text-emerald-400">✓ KYC Verified — {myRole.payload.fullName}</p>
+                <p className="text-xs text-slate-500">
+                  Wallet: {myRole.payload.walletAddress} ·
+                  Regions: {myRole.payload.authorizedRegions?.join(', ')}
+                </p>
+              </>
+            ) : kycPending ? (
+              <p className="text-xs text-amber-400">⏳ KYC pending Admin approval</p>
+            ) : (
+              <p className="text-xs text-slate-500">KYC not submitted — go to Request Access</p>
+            )}
           </div>
+          {myApproval && (
+            <span className="text-xs text-emerald-400 bg-emerald-900/30 px-2 py-1
+              rounded-lg border border-emerald-800/40">
+              🔓 Access: {myApproval.payload.region}
+            </span>
+          )}
         </div>
 
+        {!hash && (
+          <div className="card p-4 border-red-800/40 bg-red-950/30">
+            <p className="text-sm text-red-300">
+              ⚠ No Canton hash — click 🔄 in sidebar
+            </p>
+          </div>
+        )}
+
+        {loading && hash && (
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <div className="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+            Loading portfolio for {partyName}…
+          </div>
+        )}
+
+        {/* Stats */}
         <div className="grid grid-cols-3 gap-4">
-          <StatCard label="Access Approvals" value={myApprovals.length} icon={<FileCheck size={16} />} />
-          <StatCard label="SPV Tokens Held" value={myTokens.toLocaleString()}
-            icon={<Briefcase size={16} />} color="text-blue-400" />
-          <StatCard label="Claimable Yield" value={`$${myYields.reduce((s, y) => s + y.amount, 0).toFixed(2)}`}
-            icon={<TrendingUp size={16} />} color="text-amber-400" />
+          <StatCard label="Access Approvals" value={myApproval ? 1 : 0} icon={<FileCheck size={16} />} />
+          <StatCard label="Tokens Held"       value={totalTokens.toLocaleString()} icon={<Briefcase size={16} />} color="text-blue-400" />
+          <StatCard label="Claimable Yield"   value={`$${totalYield.toFixed(2)}`}  icon={<TrendingUp size={16} />} color="text-amber-400" />
         </div>
 
         {/* Investor flow checklist */}
         <div className="card p-5">
-          <h2 className="text-sm font-semibold text-white mb-4">Investor Flow Checklist</h2>
+          <h2 className="text-sm font-semibold text-white mb-4">
+            {partyName} — Flow Checklist
+          </h2>
           <ol className="space-y-3">
             {[
-              { step: 1, label: 'Submit KYC request',            done: !!myRole || s.kycRequests.some(r => r.investor === partyId) },
-              { step: 2, label: 'KYC approved by Admin',         done: !!myRole },
-              { step: 3, label: 'Request project access',        done: s.accessRequests.some(r => r.investor === partyId) || myApprovals.length > 0 },
-              { step: 4, label: 'Access approved by Admin',      done: myApprovals.length > 0 },
-              { step: 5, label: 'View & invest in projects',     done: myTokens > 0 },
-              { step: 6, label: 'Claim yield',                   done: s.claimableYields.filter(y => y.investor === partyId).length > 0 },
+              { step: 1, label: 'Submit KYC request',       done: !!myRole || kycPending },
+              { step: 2, label: 'KYC approved by Admin',    done: !!myRole },
+              { step: 3, label: 'Request project access',   done: accPending || !!myApproval },
+              { step: 4, label: 'Access approved by Admin', done: !!myApproval },
+              { step: 5, label: 'Invest in a project',      done: totalTokens > 0 },
+              { step: 6, label: 'Claim yield',              done: myYields.length === 0 && totalTokens > 0 },
             ].map(({ step, label, done }) => (
               <li key={step} className="flex items-center gap-3">
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0
@@ -71,30 +128,47 @@ export default function InvestorDashboard() {
           </ol>
         </div>
 
+        {/* Token holdings summary */}
+        {myTokens.length > 0 && (
+          <div className="card">
+            <div className="px-5 py-3 border-b border-slate-800">
+              <h2 className="text-sm font-semibold text-white">Token Holdings</h2>
+            </div>
+            <div className="divide-y divide-slate-800">
+              {myTokens.map(t => (
+                <div key={t.contractId} className="px-5 py-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white font-medium">{t.payload.projectId}</p>
+                    <p className="text-xs text-slate-500">{t.payload.symbol}</p>
+                  </div>
+                  <p className="text-sm text-emerald-400 font-semibold">
+                    {Number(t.payload.amount).toLocaleString()} tokens
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Claimable yields */}
         {myYields.length > 0 && (
           <div className="card">
             <div className="px-5 py-3 border-b border-slate-800">
               <h2 className="text-sm font-semibold text-white">Claimable Yield</h2>
             </div>
-            {myYields.map(y => (
-              <div key={y.contractId} className="px-5 py-3 flex items-center justify-between border-b
-                border-slate-800 last:border-0">
-                <div>
-                  <p className="text-sm text-white">{y.projectId}</p>
-                  <p className="text-xs text-slate-500">Period ending {y.periodEnd}</p>
+            <div className="divide-y divide-slate-800">
+              {myYields.map(y => (
+                <div key={y.contractId} className="px-5 py-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-white">{y.payload.projectId}</p>
+                    <p className="text-xs text-slate-500">Period: {y.payload.periodEnd}</p>
+                  </div>
+                  <p className="text-sm text-emerald-400 font-bold">
+                    ${Number(y.payload.amount).toFixed(2)}
+                  </p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <p className="text-sm text-emerald-400 font-semibold">${y.amount.toFixed(2)}</p>
-                  <button
-                    onClick={() => { mock.claimYield(y.contractId); }}
-                    className="btn-primary text-xs"
-                  >
-                    Claim
-                  </button>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </div>

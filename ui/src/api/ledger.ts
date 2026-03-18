@@ -1,13 +1,16 @@
+/**
+ * Sawa-X — Daml JSON API client
+ * Token and party IDs are built dynamically from the Canton node hash
+ * stored in AppContext / localStorage.
+ */
+
 const BASE = '/v1';
+export const PKG = '8f9512c74e51f99b504a767dc720ddf8be4c9e4496f54c5f4941043db19188c5';
 
-const PKG = 'ead4f13f863d82bbf7377e7618f522c9a0159a3e3c336840e51d7810ec0b77da';
-
-const SANDBOX_TOKEN = 'eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJodHRwczovL2RhbWwuY29tL2xlZGdlci1hcGkiOiB7ImxlZGdlcklkIjogInNhbmRib3giLCAiYXBwbGljYXRpb25JZCI6ICJzYXdhLXgiLCAiYWN0QXMiOiBbIkFkbWluOjoxMjIwZThkNjUwODFhY2UwMmU1ZjBhNjc4MTE1MWY3OTkwZmZhYjQzMTE0ZGVhMjU2MzM0ZTE5Yjg3Y2ZiOGI1MmYzMSIsICJPcGVyYXRvcjo6MTIyMGU4ZDY1MDgxYWNlMDJlNWYwYTY3ODExNTFmNzk5MGZmYWI0MzExNGRlYTI1NjMzNGUxOWI4N2NmYjhiNTJmMzEiLCAiSW52ZXN0b3I6OjEyMjBlOGQ2NTA4MWFjZTAyZTVmMGE2NzgxMTUxZjc5OTBmZmFiNDMxMTRkZWEyNTYzMzRlMTliODdjZmI4YjUyZjMxIiwgIlNQVl9NRVRBTEVYOjoxMjIwZThkNjUwODFhY2UwMmU1ZjBhNjc4MTE1MWY3OTkwZmZhYjQzMTE0ZGVhMjU2MzM0ZTE5Yjg3Y2ZiOGI1MmYzMSJdLCAicmVhZEFzIjogWyJBZG1pbjo6MTIyMGU4ZDY1MDgxYWNlMDJlNWYwYTY3ODExNTFmNzk5MGZmYWI0MzExNGRlYTI1NjMzNGUxOWI4N2NmYjhiNTJmMzEiLCAiT3BlcmF0b3I6OjEyMjBlOGQ2NTA4MWFjZTAyZTVmMGE2NzgxMTUxZjc5OTBmZmFiNDMxMTRkZWEyNTYzMzRlMTliODdjZmI4YjUyZjMxIiwgIkludmVzdG9yOjoxMjIwZThkNjUwODFhY2UwMmU1ZjBhNjc4MTE1MWY3OTkwZmZhYjQzMTE0ZGVhMjU2MzM0ZTE5Yjg3Y2ZiOGI1MmYzMSIsICJTUFZfTUVUQUxFWDo6MTIyMGU4ZDY1MDgxYWNlMDJlNWYwYTY3ODExNTFmNzk5MGZmYWI0MzExNGRlYTI1NjMzNGUxOWI4N2NmYjhiNTJmMzEiXX19.fake';
-
+// ─── Template IDs ─────────────────────────────────────────────────────────────
 export const TMPL = {
   KYCRequest:        `${PKG}:Sawa.Identity.UserRole:KYCRequest`,
   UserRole:          `${PKG}:Sawa.Identity.UserRole:UserRole`,
-  SPVIdentity:       `${PKG}:Sawa.Identity.UserRole:SPVIdentity`,
   RegionalPortfolio: `${PKG}:Sawa.Portfolio.RegionalPortfolio:RegionalPortfolio`,
   ProjectSPV:        `${PKG}:Sawa.Asset.ProjectSPV:ProjectSPV`,
   SPVToken:          `${PKG}:Sawa.Token.SPVToken:SPVToken`,
@@ -19,15 +22,51 @@ export const TMPL = {
   ClaimableYield:    `${PKG}:Sawa.Yield.ProductionReport:ClaimableYield`,
 };
 
+// ─── Token builder ────────────────────────────────────────────────────────────
+function buildToken(hash: string): string {
+  if (!hash) return 'no-hash';
+
+  const parties = [
+    `Admin::${hash}`,
+    `Operator::${hash}`,
+    `Investor1::${hash}`,
+    `Investor2::${hash}`,
+    `Investor3::${hash}`,
+    `SPV_METALEX::${hash}`,
+  ];
+
+  const header  = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+
+  const payload = btoa(JSON.stringify({
+    'https://daml.com/ledger-api': {
+      ledgerId: 'sandbox',
+      applicationId: 'sawa-x',
+      actAs:  parties,
+      readAs: parties,
+    },
+  })).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+
+  return `${header}.${payload}.fake`;
+}
+
+// ─── Get hash from localStorage ───────────────────────────────────────────────
+function getHash(): string {
+  return localStorage.getItem('canton_node_hash') ?? '';
+}
+
+// ─── Core fetch ───────────────────────────────────────────────────────────────
 async function ledgerFetch(path: string, body: unknown) {
+  const token = buildToken(getHash());
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${SANDBOX_TOKEN}`,
+      'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify(body),
   });
+
   const data = await res.json();
   if (!res.ok || (data.status !== undefined && data.status !== 200)) {
     throw new Error(data.errors?.[0] ?? `Ledger error ${res.status}`);
@@ -35,6 +74,7 @@ async function ledgerFetch(path: string, body: unknown) {
   return data.result;
 }
 
+// ─── Public API ───────────────────────────────────────────────────────────────
 export async function queryContracts<T>(
   _party: string,
   templateId: string,
@@ -62,11 +102,27 @@ export async function exerciseChoice(
   choice: string,
   argument: unknown = {},
 ): Promise<unknown> {
-  const result = await ledgerFetch('/exercise', {
-    templateId,
-    contractId,
-    choice,
-    argument,
+  return ledgerFetch('/exercise', { templateId, contractId, choice, argument });
+}
+
+// ─── Fetch current node hash from ledger ─────────────────────────────────────
+export async function fetchAndStoreHash(): Promise<string> {
+  // Use a minimal token just to hit /v1/parties
+  const minToken = buildToken(getHash()) !== 'no-hash'
+    ? buildToken(getHash())
+    : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.fake';
+
+  const res = await fetch(`${BASE}/parties`, {
+    headers: { 'Authorization': `Bearer ${minToken}` },
   });
-  return result;
+  const data = await res.json();
+  // Extract hash from first party identifier
+  const first = data?.result?.[0]?.identifier ?? '';
+  const match = first.match(/::([a-f0-9]{60,70})/);
+  if (match) {
+    const hash = match[1];
+    localStorage.setItem('canton_node_hash', hash);
+    return hash;
+  }
+  throw new Error('Could not detect Canton node hash from /v1/parties');
 }

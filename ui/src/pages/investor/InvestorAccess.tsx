@@ -3,13 +3,12 @@ import { Send } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import { KYCBadge } from '../../components/Badge';
 import { queryContracts, createContract, TMPL } from '../../api/ledger';
-import { useApp } from '../../context/AppContext';
-
-const ADMIN_PARTY    = 'Admin::1220e8d65081ace02e5f0a6781151f7990ffab43114dea256334e19b87cfb8b52f31';
-const INVESTOR_PARTY = 'Investor::1220e8d65081ace02e5f0a6781151f7990ffab43114dea256334e19b87cfb8b52f31';
+import { useApp, fullPartyId } from '../../context/AppContext';
 
 export default function InvestorAccess() {
-  const { addToast, triggerRefresh, refresh } = useApp();
+  const { addToast, triggerRefresh, refresh, partyId, partyName, hash } = useApp();
+
+  const ADMIN_PARTY = fullPartyId('Admin', hash);
 
   const [myRole,      setMyRole]      = useState<any | null>(null);
   const [myKycReq,    setMyKycReq]    = useState<any | null>(null);
@@ -18,14 +17,31 @@ export default function InvestorAccess() {
   const [loading,     setLoading]     = useState(true);
 
   const [kycForm, setKycForm] = useState({
-    fullName: 'Alice Mwangi', walletAddress: '0xAlice123', regions: 'South Africa',
+    fullName:  partyName === 'Investor1' ? 'Alice Mwangi'
+             : partyName === 'Investor2' ? 'Bob Kariuki'
+             : 'Carol Osei',
+    walletAddress: `0x${partyName}Wallet`,
+    regions: 'South Africa',
   });
+
   const [accessForm, setAccessForm] = useState({
-    region: 'South Africa',
+    region:  'South Africa',
     purpose: 'Reviewing renewable energy investment opportunities',
   });
 
+  // Re-load when investor switches
   useEffect(() => {
+    setKycForm({
+      fullName:  partyName === 'Investor1' ? 'Alice Mwangi'
+               : partyName === 'Investor2' ? 'Bob Kariuki'
+               : 'Carol Osei',
+      walletAddress: `0x${partyName}Wallet`,
+      regions: 'South Africa',
+    });
+  }, [partyName]);
+
+  useEffect(() => {
+    if (!hash) return;
     setLoading(true);
     Promise.all([
       queryContracts('Investor', TMPL.UserRole),
@@ -33,27 +49,27 @@ export default function InvestorAccess() {
       queryContracts('Investor', TMPL.AccessRequest),
       queryContracts('Investor', TMPL.AccessApproval),
     ]).then(([roles, kycReqs, accessReqs, approvals]) => {
-      setMyRole(roles.find(r => r.payload.investor === INVESTOR_PARTY) ?? null);
-      setMyKycReq(kycReqs.find(r => r.payload.investor === INVESTOR_PARTY) ?? null);
-      setMyAccessReq(accessReqs.find(r => r.payload.investor === INVESTOR_PARTY) ?? null);
-      setMyApproval(approvals.find(r => r.payload.investor === INVESTOR_PARTY) ?? null);
+      setMyRole(roles.find(r => r.payload.investor === partyId) ?? null);
+      setMyKycReq(kycReqs.find(r => r.payload.investor === partyId) ?? null);
+      setMyAccessReq(accessReqs.find(r => r.payload.investor === partyId) ?? null);
+      setMyApproval(approvals.find(r => r.payload.investor === partyId) ?? null);
     })
       .catch(e => addToast('error', e.message))
       .finally(() => setLoading(false));
-  }, [refresh]);
+  }, [refresh, partyId, hash]);
 
   const submitKYC = async () => {
-    if (myRole)   { addToast('info', 'Already KYC verified'); return; }
+    if (myRole)   { addToast('info', `${partyName} already KYC verified`); return; }
     if (myKycReq) { addToast('info', 'KYC request already pending'); return; }
     try {
       await createContract('Investor', TMPL.KYCRequest, {
-        investor:         INVESTOR_PARTY,
+        investor:         partyId,
         admin:            ADMIN_PARTY,
         fullName:         kycForm.fullName,
         walletAddress:    kycForm.walletAddress,
         requestedRegions: kycForm.regions.split(',').map(s => s.trim()),
       });
-      addToast('success', 'KYC request submitted to ledger');
+      addToast('success', `KYC request submitted for ${partyName}`);
       triggerRefresh();
     } catch (e: any) { addToast('error', e.message); }
   };
@@ -64,28 +80,48 @@ export default function InvestorAccess() {
     if (myApproval) { addToast('info', 'Access already granted'); return; }
     try {
       await createContract('Investor', TMPL.AccessRequest, {
-        investor:     INVESTOR_PARTY,
+        investor:     partyId,
         admin:        ADMIN_PARTY,
         investorName: myRole.payload.fullName,
         region:       accessForm.region,
         purpose:      accessForm.purpose,
       });
-      addToast('success', 'Access request submitted to ledger');
+      addToast('success', 'Access request submitted to Admin');
       triggerRefresh();
     } catch (e: any) { addToast('error', e.message); }
   };
 
   return (
     <div>
-      <PageHeader title="Request Access" subtitle="Step 1: KYC · Step 2: Project Access" />
+      <PageHeader
+        title={`Request Access — ${partyName}`}
+        subtitle="Step 1: KYC · Step 2: Project Access"
+      />
       <div className="px-6 pb-6 space-y-6">
 
+        {/* Current investor indicator */}
+        <div className="flex items-center gap-3 bg-slate-800/60 border border-slate-700
+          rounded-xl px-4 py-3">
+          <div className="w-8 h-8 rounded-full bg-emerald-900/50 flex items-center
+            justify-center text-emerald-300 text-sm font-bold">
+            {partyName.replace('Investor', 'I')}
+          </div>
+          <div>
+            <p className="text-sm font-medium text-white">{partyName}</p>
+            <p className="text-xs text-slate-500 font-mono">
+              {partyId.slice(0, 30)}…
+            </p>
+          </div>
+          <p className="text-xs text-slate-500 ml-auto">
+            Switch investor in the sidebar
+          </p>
+        </div>
+
         {loading && (
-          <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-800/50
-            border border-slate-700 rounded-lg px-3 py-2 w-fit">
+          <div className="flex items-center gap-2 text-xs text-slate-500">
             <div className="w-3 h-3 border-2 border-emerald-500 border-t-transparent
               rounded-full animate-spin" />
-            Loading from Canton ledger…
+            Loading ledger state for {partyName}…
           </div>
         )}
 
@@ -109,14 +145,10 @@ export default function InvestorAccess() {
               <p className="text-xs text-slate-400">
                 Regions: {myRole.payload.authorizedRegions?.join(', ')}
               </p>
-              <p className="text-xs text-slate-600 mt-1 font-mono">
-                UserRole cid: {myRole.contractId.slice(0, 24)}…
-              </p>
             </div>
           ) : myKycReq ? (
             <div className="bg-amber-950/30 border border-amber-800/40 rounded-xl p-4">
-              <p className="text-sm text-amber-300">KYC request on ledger</p>
-              <p className="text-xs text-slate-400 mt-1">Waiting for Admin approval…</p>
+              <p className="text-sm text-amber-300">KYC request on ledger — awaiting Admin</p>
               <p className="text-xs text-slate-500 mt-1 font-mono">
                 cid: {myKycReq.contractId.slice(0, 24)}…
               </p>
@@ -136,12 +168,12 @@ export default function InvestorAccess() {
                 </div>
               </div>
               <div>
-                <label className="label">Requested Regions (comma-separated)</label>
+                <label className="label">Requested Regions</label>
                 <input className="input" value={kycForm.regions}
                   onChange={e => setKycForm(f => ({ ...f, regions: e.target.value }))} />
               </div>
               <button onClick={submitKYC} className="btn-primary w-full justify-center">
-                <Send size={14} /> Submit KYC to Ledger
+                <Send size={14} /> Submit KYC for {partyName}
               </button>
             </div>
           )}
@@ -161,7 +193,7 @@ export default function InvestorAccess() {
 
           {!myRole && (
             <p className="text-sm text-slate-500 py-4 text-center">
-              Complete KYC first to request access
+              Complete KYC first
             </p>
           )}
 
@@ -171,21 +203,14 @@ export default function InvestorAccess() {
                 ✓ Access Approved for {myApproval.payload.region}
               </p>
               <p className="text-xs text-slate-400 mt-1">
-                You can now view projects in this region.
-              </p>
-              <p className="text-xs text-slate-600 mt-1 font-mono">
-                AccessApproval cid: {myApproval.contractId.slice(0, 24)}…
+                You can now view and invest in projects in this region.
               </p>
             </div>
           )}
 
           {myRole && myAccessReq && !myApproval && (
             <div className="bg-amber-950/30 border border-amber-800/40 rounded-xl p-4">
-              <p className="text-sm text-amber-300">Access request on ledger</p>
-              <p className="text-xs text-slate-400 mt-1">Waiting for Admin approval…</p>
-              <p className="text-xs text-slate-500 font-mono mt-1">
-                cid: {myAccessReq.contractId.slice(0, 24)}…
-              </p>
+              <p className="text-sm text-amber-300">Access request pending Admin approval…</p>
             </div>
           )}
 
@@ -202,7 +227,7 @@ export default function InvestorAccess() {
                   onChange={e => setAccessForm(f => ({ ...f, purpose: e.target.value }))} />
               </div>
               <button onClick={submitAccess} className="btn-primary w-full justify-center">
-                <Send size={14} /> Request Access on Ledger
+                <Send size={14} /> Request Access for {partyName}
               </button>
             </div>
           )}

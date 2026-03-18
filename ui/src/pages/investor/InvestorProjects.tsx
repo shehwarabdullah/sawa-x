@@ -4,69 +4,87 @@ import PageHeader from '../../components/PageHeader';
 import Modal from '../../components/Modal';
 import { SPVStateBadge } from '../../components/Badge';
 import { queryContracts, createContract, exerciseChoice, TMPL } from '../../api/ledger';
-import { useApp } from '../../context/AppContext';
-
-const INVESTOR_PARTY = 'Investor::1220e8d65081ace02e5f0a6781151f7990ffab43114dea256334e19b87cfb8b52f31';
-const OPERATOR_PARTY = 'Operator::1220e8d65081ace02e5f0a6781151f7990ffab43114dea256334e19b87cfb8b52f31';
-const SPV_PARTY      = 'SPV_METALEX::1220e8d65081ace02e5f0a6781151f7990ffab43114dea256334e19b87cfb8b52f31';
+import { useApp, fullPartyId } from '../../context/AppContext';
 
 export default function InvestorProjects() {
-  const { addToast, triggerRefresh, refresh } = useApp();
+  const { addToast, triggerRefresh, refresh, partyId, partyName, hash } = useApp();
+
+  const OPERATOR_PARTY = fullPartyId('Operator', hash);
+  const SPV_PARTY      = fullPartyId('SPV_METALEX', hash);
 
   const [myApproval,  setMyApproval]  = useState<any | null>(null);
   const [projects,    setProjects]    = useState<any[]>([]);
+  const [portfolios,  setPortfolios]  = useState<any[]>([]);
   const [registries,  setRegistries]  = useState<any[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [showInvest,  setShowInvest]  = useState<any | null>(null);
   const [invForm,     setInvForm]     = useState({ tokens: '10000', usdcx: '10000' });
 
   useEffect(() => {
+    if (!hash) return;
     setLoading(true);
     Promise.all([
       queryContracts('Investor', TMPL.AccessApproval),
       queryContracts('Investor', TMPL.ProjectSPV),
+      queryContracts('Investor', TMPL.RegionalPortfolio),
       queryContracts('Investor', TMPL.SPVTokenRegistry),
-    ]).then(([approvals, projs, regs]) => {
-      setMyApproval(approvals.find(a => a.payload.investor === INVESTOR_PARTY) ?? null);
+    ]).then(([approvals, projs, ports, regs]) => {
+      setMyApproval(approvals.find(a => a.payload.investor === partyId) ?? null);
       setProjects(projs);
+      setPortfolios(ports);
       setRegistries(regs);
     })
       .catch(e => addToast('error', e.message))
       .finally(() => setLoading(false));
-  }, [refresh]);
+  }, [refresh, partyId, hash]);
 
-  const visibleProjects = myApproval
-    ? projects.filter(p =>
-        p.payload.region === myApproval.payload.region &&
-        ['FundingOpen', 'Funded', 'Operational'].includes(p.payload.state)
-      )
-    : [];
+  // Projects visible to this investor:
+  // 1. Investor must have AccessApproval
+  // 2. Project must be in a portfolio where this investor is authorized
+  // 3. Project state must be FundingOpen, Funded, or Operational
+  const visibleProjects = (() => {
+    if (!myApproval) return [];
+
+    // Find portfolios where this investor is authorized
+    const myPortfolios = portfolios.filter(p =>
+      p.payload.authorizedInvestors?.includes(partyId)
+    );
+
+    // Get all project IDs in those portfolios
+    const authorizedProjectIds = new Set(
+      myPortfolios.flatMap((p: any) => p.payload.projects ?? [])
+    );
+
+    return projects.filter(p =>
+      authorizedProjectIds.has(p.payload.projectId) &&
+      ['FundingOpen', 'Funded', 'Operational'].includes(p.payload.state)
+    );
+  })();
 
   const handleInvest = async (p: any) => {
     try {
-      // Create investment request
       const reqCid = await createContract('Investor', TMPL.InvestmentRequest, {
-        investor:        INVESTOR_PARTY,
+        investor:        partyId,
         operator:        OPERATOR_PARTY,
         spvParty:        SPV_PARTY,
         projectId:       p.payload.projectId,
         tokenSymbol:     p.payload.tokenSymbol,
-        usdcxHoldingCid: `holding-${Date.now()}`,
+        usdcxHoldingCid: `holding-${partyName}-${Date.now()}`,
         requestedTokens: invForm.tokens,
         usdcxAmount:     invForm.usdcx,
       });
 
-      // Find registry
       const reg = registries.find(r => r.payload.projectId === p.payload.projectId);
-      if (!reg) throw new Error('Token registry not found for project');
+      if (!reg) throw new Error('Token registry not found');
 
-      // Operator accepts immediately (demo auto-accept)
       await exerciseChoice('Operator', TMPL.InvestmentRequest, reqCid, 'Accept', {
         registryCid: reg.contractId,
         projectCid:  p.contractId,
       });
 
-      addToast('success', `Invested ${invForm.tokens} ${p.payload.tokenSymbol} tokens on ledger`);
+      addToast('success',
+        `${partyName} invested ${invForm.tokens} ${p.payload.tokenSymbol} tokens`
+      );
       setShowInvest(null);
       triggerRefresh();
     } catch (e: any) { addToast('error', e.message); }
@@ -75,13 +93,13 @@ export default function InvestorProjects() {
   if (loading) {
     return (
       <div>
-        <PageHeader title="Projects" subtitle="View available investment opportunities" />
+        <PageHeader title={`Projects — ${partyName}`} subtitle="View available investment opportunities" />
         <div className="px-6">
           <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-800/50
             border border-slate-700 rounded-lg px-3 py-2 w-fit">
             <div className="w-3 h-3 border-2 border-emerald-500 border-t-transparent
               rounded-full animate-spin" />
-            Loading from Canton ledger…
+            Loading ledger state for {partyName}…
           </div>
         </div>
       </div>
@@ -91,17 +109,26 @@ export default function InvestorProjects() {
   if (!myApproval) {
     return (
       <div>
-        <PageHeader title="Projects" subtitle="View available investment opportunities" />
-        <div className="px-6 pb-6">
+        <PageHeader title={`Projects — ${partyName}`} subtitle="View available investment opportunities" />
+        <div className="px-6 pb-6 space-y-4">
+          {/* Investor indicator */}
+          <div className="flex items-center gap-3 bg-slate-800/60 border border-slate-700
+            rounded-xl px-4 py-3">
+            <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center
+              justify-center text-slate-300 text-sm font-bold">
+              {partyName.replace('Investor', 'I')}
+            </div>
+            <p className="text-sm text-slate-300">Acting as <strong>{partyName}</strong></p>
+          </div>
           <div className="card p-12 text-center">
             <Lock size={40} className="mx-auto text-slate-700 mb-4" />
-            <p className="text-white font-medium mb-1">Access Required</p>
-            <p className="text-sm text-slate-400 mb-4">
-              No AccessApproval contract found on ledger for your party.
+            <p className="text-white font-medium mb-1">Access Required for {partyName}</p>
+            <p className="text-sm text-slate-400 mb-2">
+              No AccessApproval found on ledger for this investor.
             </p>
             <p className="text-xs text-slate-500">
-              Go to <strong className="text-slate-300">Request Access</strong> tab,
-              submit a request, then ask Admin to approve it.
+              Go to <strong className="text-slate-300">Request Access</strong>,
+              submit KYC and access request, then ask Admin to approve.
             </p>
           </div>
         </div>
@@ -112,22 +139,24 @@ export default function InvestorProjects() {
   return (
     <div>
       <PageHeader
-        title="Projects"
-        subtitle={`Viewing projects in region: ${myApproval.payload.region}`}
+        title={`Projects — ${partyName}`}
+        subtitle={`Region: ${myApproval.payload.region} · ${visibleProjects.length} project(s) available`}
       />
       <div className="px-6 pb-6 space-y-4">
 
-        {/* Access proof banner */}
+        {/* Investor + access banner */}
         <div className="flex items-center gap-3 bg-emerald-950/40 border border-emerald-800/40
           rounded-xl px-4 py-3">
-          <span className="text-emerald-400 text-lg">🔓</span>
+          <div className="w-8 h-8 rounded-full bg-emerald-900/50 flex items-center
+            justify-center text-emerald-300 text-sm font-bold">
+            {partyName.replace('Investor', 'I')}
+          </div>
           <div>
             <p className="text-sm text-emerald-300 font-medium">
-              Access Granted on Canton Ledger
+              🔓 {partyName} — Access Granted
             </p>
             <p className="text-xs text-slate-400">
-              Region: {myApproval.payload.region} ·
-              cid: {myApproval.contractId.slice(0, 24)}…
+              Region: {myApproval.payload.region}
             </p>
           </div>
         </div>
@@ -135,16 +164,19 @@ export default function InvestorProjects() {
         {visibleProjects.length === 0 ? (
           <div className="card p-8 text-center">
             <p className="text-slate-400 text-sm">
-              No open projects in {myApproval.payload.region} yet.
+              No open projects in your authorized portfolios yet.
+            </p>
+            <p className="text-xs text-slate-500 mt-1">
+              Projects appear here once: (1) Admin creates a portfolio for your region,
+              (2) Admin adds you as investor, (3) Operator opens funding.
             </p>
           </div>
         ) : visibleProjects.map(p => {
-          const reg    = registries.find(r => r.payload.projectId === p.payload.projectId);
-         const myBal = (reg?.payload.holdings ?? [])
-  .find((h: any) => h._1 === INVESTOR_PARTY)?._2 ?? 0;
-          const pct    = Number(p.payload.fundingTarget) > 0
-            ? (Number(p.payload.fundingRaised) / Number(p.payload.fundingTarget)) * 100
-            : 0;
+          const reg   = registries.find(r => r.payload.projectId === p.payload.projectId);
+          const myBal = (reg?.payload.holdings ?? [])
+            .find((h: any) => h._1 === partyId)?._2 ?? 0;
+          const pct   = Number(p.payload.fundingTarget) > 0
+            ? (Number(p.payload.fundingRaised) / Number(p.payload.fundingTarget)) * 100 : 0;
 
           return (
             <div key={p.contractId} className="card p-5">
@@ -164,14 +196,13 @@ export default function InvestorProjects() {
                       ['Tranche',      p.payload.trancheNumber?.Some ?? p.payload.trancheNumber ?? '—'],
                       ['Region',       p.payload.region],
                     ].map(([k, v]) => (
-                      <div key={k} className="bg-slate-800/50 rounded-lg px-3 py-2">
+                      <div key={k as string} className="bg-slate-800/50 rounded-lg px-3 py-2">
                         <p className="text-xs text-slate-500">{k}</p>
                         <p className="text-xs text-white font-medium">{v}</p>
                       </div>
                     ))}
                   </div>
 
-                  {/* Funding bar */}
                   <div className="mb-3">
                     <div className="flex justify-between text-xs text-slate-500 mb-1">
                       <span>Funding Progress</span>
@@ -194,8 +225,8 @@ export default function InvestorProjects() {
                         {Number(reg.payload.totalSupply).toLocaleString()} {p.payload.tokenSymbol}
                       </span>
                       {Number(myBal) > 0 && (
-                        <span className="ml-4 text-emerald-400">
-                          My Holdings: {Number(myBal).toLocaleString()} tokens
+                        <span className="ml-4 text-emerald-400 font-medium">
+                          {partyName} Holdings: {Number(myBal).toLocaleString()} tokens
                         </span>
                       )}
                     </div>
@@ -213,12 +244,12 @@ export default function InvestorProjects() {
         })}
       </div>
 
-      {/* Invest Modal */}
       {showInvest && (
-        <Modal title={`Invest in ${showInvest.payload.projectName}`}
+        <Modal title={`${partyName} — Invest in ${showInvest.payload.projectName}`}
           onClose={() => setShowInvest(null)}>
           <div className="space-y-4">
             <div className="bg-slate-800/60 rounded-xl p-3 text-xs text-slate-400 space-y-1">
+              <p>Investor: <span className="text-emerald-300">{partyName}</span></p>
               <p>Token: <span className="text-white">{showInvest.payload.tokenSymbol}</span>
                 @ ${showInvest.payload.tokenPrice} each</p>
               <p>Remaining: <span className="text-emerald-400">
@@ -235,14 +266,11 @@ export default function InvestorProjects() {
               <label className="label">USDCx Amount</label>
               <input className="input" type="number" value={invForm.usdcx}
                 onChange={e => setInvForm(f => ({ ...f, usdcx: e.target.value }))} />
-              <p className="text-xs text-slate-500 mt-1">
-                Creates InvestmentRequest → auto-accepted by Operator on ledger
-              </p>
             </div>
             <div className="flex gap-2 justify-end pt-2">
               <button className="btn-secondary" onClick={() => setShowInvest(null)}>Cancel</button>
               <button className="btn-primary" onClick={() => handleInvest(showInvest)}>
-                Confirm on Ledger
+                Confirm — {partyName}
               </button>
             </div>
           </div>

@@ -1,2 +1,43 @@
 2026-03-15 20:55:21,432 [main] INFO  c.d.c.e.CommunityEnvironment tid:5485d4842af26dad393baa8a9f1108fc - Automatically starting all instances
 2026-03-15 20:55:24,721 [main] ERROR c.d.c.e.CommunityEnvironment tid:5485d4842af26dad393baa8a9f1108fc - Failed to start local: Failed to bind to address /127.0.0.1:6868
+2026-03-17 10:20:15,833 [canton-env-ec-64] DEBUG c.d.c.p.l.a.StartableStoppableLedgerApiServer:participant=sandbox tid:64e597f132afdc842263ae7b96014830 - Shutting down ledger API server
+2026-03-17 10:20:20,361 [canton-env-ec-64] INFO  c.d.c.p.l.a.StartableStoppableLedgerApiServer:participant=sandbox tid:64e597f132afdc842263ae7b96014830 - Task closing ledger API server still not completed after 4500 milliseconds. Continue waiting...
+2026-03-17 10:20:22,612 [canton-env-ec-64] INFO  c.d.c.p.l.a.StartableStoppableLedgerApiServer:participant=sandbox tid:64e597f132afdc842263ae7b96014830 - Task closing ledger API server still not completed after 6750 milliseconds. Continue waiting...
+2026-03-17 10:20:24,859 [canton-env-ec-64] INFO  c.d.c.p.l.a.StartableStoppableLedgerApiServer:participant=sandbox tid:64e597f132afdc842263ae7b96014830 - Task closing ledger API server still not completed after 9 seconds. Continue waiting...
+2026-03-17 10:20:25,233 [canton-env-ec-64] WARN  c.d.c.p.l.a.StartableStoppableLedgerApiServer:participant=sandbox tid:64e597f132afdc842263ae7b96014830 - Task closing ledger API server did not complete within 9 seconds. Stack traces:
+  Thread[local-wallclock-0,5,main] is-daemon=false state=TIMED_WAITING
+    java.base@17.0.18/jdk.internal.misc.Unsafe.park(Native Method)
+    java.base@17.0.18/java.util.concurrent.locks.LockSupport.parkNanos(LockSupport.java:252)
+    java.base@17.0.18/java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.awaitNanos(AbstractQueuedSynchronizer.java:1679)
+    java.base@17.0.18/java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:1182)
+    java.base@17.0.18/java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:899)
+    java.base@17.0.18/java.util.concurrent.ThreadPoolExecutor.getTask(ThreadPoolExecutor.java:1062)
+    java.base@17.0.18/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1122)
+    java.base@17.0.18/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+    java.base@17.0.18/java.lang.Thread.run(Thread.java:840)
+
+  Thread[sandbox-wallclock-0,5,main] is-daemon=false state=TIMED_WAITING
+    java.base@17.0.18/jdk.internal.misc.Unsafe.park(Native Method)
+    java.base@17.0.18/java.util.concurrent.locks.LockSupport.parkNanos(LockSupport.java:252)
+    java.base@17.0.18/java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.awaitNanos(AbstractQueuedSynchronizer.java:1679)
+    java.base@17.0.18/java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:1182)
+    java.base@17.0.18/java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:899)
+    java.base@17.0.18/java.util.concurrent.ThreadPoolExecutor.getTask(ThreadPoolExecutor.java:1062)
+    java.base@17.0.18/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1122)
+    java.base@17.0.18/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+    java.base@17.0.18/java.lang.Thread.run(Thread.java:840)
+
+  Thread[delay-util-0,5,main] is-daemon=true state=WAITING
+    java.base@17.0.18/jdk.internal.misc.Unsafe.park(Native Method)
+    java.base@17.0.18/java.util.concurrent.locks.LockSupport.park(LockSupport.java:341)
+    java.base@17.0.18/java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionNode.block(AbstractQueuedSynchronizer.java:506)
+    java.base@17.0.18/java.util.concurrent.ForkJoinPool.unmanagedBlock(ForkJoinPool.java:3465)
+    java.base@17.0.18/java.util.concurrent.ForkJoinPool.managedBlock(ForkJoinPool.java:3436)
+    java.base@17.0.18/java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.await(AbstractQueuedSynchronizer.java:1630)
+    java.base@17.0.18/java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:1170)
+    java.base@17.0.18/java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:899)
+    java.base@17.0.18/java.util.concurrent.ThreadPoolExecutor.getTask(ThreadPoolExecutor.java:1062)
+    java.base@17.0.18/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1122)
+    java.base@17.0.18/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+    java.base@17.0.18/java.lang.Thread.run(Thread.java:840)
+

@@ -1,9 +1,28 @@
-node_modules/
+# Daml build output
 .daml/
 target/
-dist/
-.vite/
 *.dar
+
+# Node
+node_modules/
 ui/node_modules/
 ui/dist/
+ui/src/api/canton-hash.ts
+
+# Logs
+log/
+*.log
+*.log.gz
+
+# Git junk files (accidentally created)
+--dar
+--ledger-host
+--ledger-port
+--script-name
+--wall-clock-time
+
+# Zip files
+*.zip
+
+# Env
 .env

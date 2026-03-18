@@ -3,18 +3,22 @@ import { CheckCircle, XCircle, Briefcase } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import { SPVStateBadge } from '../../components/Badge';
 import { queryContracts, exerciseChoice, TMPL } from '../../api/ledger';
-import { useApp } from '../../context/AppContext';
+import { useApp, fullPartyId } from '../../context/AppContext';
 
 export default function SPVProposals() {
-  const { addToast, triggerRefresh, refresh } = useApp();
+  const { addToast, triggerRefresh, refresh, hash } = useApp();
 
-  const [projects, setProjects] = useState<any[]>([]);
-  const [loading,  setLoading]  = useState(true);
+  const [projects,   setProjects]   = useState<any[]>([]);
+  const [portfolios, setPortfolios] = useState<any[]>([]);
+  const [loading,    setLoading]    = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    queryContracts('Admin', TMPL.ProjectSPV)
-      .then(setProjects)
+    Promise.all([
+      queryContracts('Admin', TMPL.ProjectSPV),
+      queryContracts('Admin', TMPL.RegionalPortfolio),
+    ])
+      .then(([projs, ports]) => { setProjects(projs); setPortfolios(ports); })
       .catch(e => addToast('error', e.message))
       .finally(() => setLoading(false));
   }, [refresh]);
@@ -22,10 +26,31 @@ export default function SPVProposals() {
   const proposed = projects.filter(p => p.payload.state === 'Proposed');
   const others   = projects.filter(p => p.payload.state !== 'Proposed');
 
-  const approve = async (contractId: string, name: string) => {
+  const approve = async (contractId: string, name: string, region: string) => {
     try {
+      // 1. Approve the project
       await exerciseChoice('Admin', TMPL.ProjectSPV, contractId, 'Approve', {});
-      addToast('success', `SPV "${name}" approved on ledger`);
+
+      // 2. Find matching portfolio and add project
+      const matchingPortfolio = portfolios.find(
+        p => p.payload.region === region && !p.payload.archived
+      );
+      if (matchingPortfolio) {
+        // Extract projectId from the project payload
+        const proj = projects.find(p => p.contractId === contractId);
+        if (proj) {
+          await exerciseChoice('Admin', TMPL.RegionalPortfolio,
+            matchingPortfolio.contractId, 'AddProject', {
+              projectId: proj.payload.projectId,
+            });
+          addToast('success',
+            `SPV "${name}" approved and added to "${matchingPortfolio.payload.portfolioName}"`
+          );
+        }
+      } else {
+        addToast('success', `SPV "${name}" approved (no matching portfolio for region: ${region})`);
+      }
+
       triggerRefresh();
     } catch (e: any) { addToast('error', e.message); }
   };
@@ -40,7 +65,10 @@ export default function SPVProposals() {
 
   return (
     <div>
-      <PageHeader title="SPV Proposals" subtitle="Review and approve operator SPV project proposals" />
+      <PageHeader
+        title="SPV Proposals"
+        subtitle="Approve proposals — project is automatically added to matching regional portfolio"
+      />
       <div className="px-6 pb-6 space-y-6">
 
         {loading && (
@@ -49,6 +77,30 @@ export default function SPVProposals() {
             <div className="w-3 h-3 border-2 border-emerald-500 border-t-transparent
               rounded-full animate-spin" />
             Loading from Canton ledger…
+          </div>
+        )}
+
+        {/* Portfolios overview */}
+        {portfolios.length > 0 && (
+          <div className="card p-4">
+            <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">
+              Active Regional Portfolios
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {portfolios.filter(p => !p.payload.archived).map(p => (
+                <div key={p.contractId}
+                  className="flex items-center gap-2 bg-slate-800 rounded-lg px-3 py-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <div>
+                    <p className="text-xs text-white font-medium">{p.payload.portfolioName}</p>
+                    <p className="text-xs text-slate-500">
+                      {p.payload.region} · {p.payload.projects?.length ?? 0} projects ·
+                      {p.payload.authorizedInvestors?.length ?? 0} investors
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -67,55 +119,69 @@ export default function SPVProposals() {
             <div className="px-5 py-8 text-center text-slate-500 text-sm">
               No proposals pending
             </div>
-          ) : proposed.map(p => (
-            <div key={p.contractId}
-              className="px-5 py-4 border-b border-slate-800 last:border-0">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-slate-800 flex items-center
-                    justify-center">
-                    <Briefcase size={15} className="text-amber-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-white">{p.payload.projectName}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      ID: {p.payload.projectId} · Region: {p.payload.region}
-                    </p>
-                    <div className="grid grid-cols-3 gap-4 mt-2">
-                      {[
-                        ['Capacity',       `${p.payload.capacityMW} MW`],
-                        ['PPA Tariff',     `$${p.payload.ppaTariff}/kWh`],
-                        ['Funding Target', `$${Number(p.payload.fundingTarget).toLocaleString()}`],
-                        ['Token Symbol',   p.payload.tokenSymbol],
-                        ['Token Price',    `$${p.payload.tokenPrice}`],
-                        ['Tranche',        p.payload.trancheNumber ?? '—'],
-                      ].map(([k, v]) => (
-                        <div key={k}>
-                          <p className="text-xs text-slate-500">{k}</p>
-                          <p className="text-xs text-white font-medium">{v}</p>
-                        </div>
-                      ))}
+          ) : proposed.map(p => {
+            const matchPort = portfolios.find(
+              port => port.payload.region === p.payload.region && !port.payload.archived
+            );
+            return (
+              <div key={p.contractId}
+                className="px-5 py-4 border-b border-slate-800 last:border-0">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-slate-800 flex items-center
+                      justify-center">
+                      <Briefcase size={15} className="text-amber-400" />
                     </div>
-                    <p className="text-xs text-slate-600 mt-2 font-mono">
-                      cid: {p.contractId.slice(0, 24)}…
-                    </p>
+                    <div>
+                      <p className="text-sm font-semibold text-white">{p.payload.projectName}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        ID: {p.payload.projectId} · Region: {p.payload.region}
+                      </p>
+
+                      {/* Portfolio match indicator */}
+                      {matchPort ? (
+                        <p className="text-xs text-emerald-400 mt-1">
+                          ✓ Will be added to: {matchPort.payload.portfolioName}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-amber-400 mt-1">
+                          ⚠ No portfolio found for region "{p.payload.region}"
+                        </p>
+                      )}
+
+                      <div className="grid grid-cols-3 gap-4 mt-2">
+                        {[
+                          ['Capacity',       `${p.payload.capacityMW} MW`],
+                          ['PPA Tariff',     `$${p.payload.ppaTariff}/kWh`],
+                          ['Funding Target', `$${Number(p.payload.fundingTarget).toLocaleString()}`],
+                          ['Token Symbol',   p.payload.tokenSymbol],
+                          ['Token Price',    `$${p.payload.tokenPrice}`],
+                          ['Tranche',        p.payload.trancheNumber?.Some ?? p.payload.trancheNumber ?? '—'],
+                        ].map(([k, v]) => (
+                          <div key={k as string}>
+                            <p className="text-xs text-slate-500">{k}</p>
+                            <p className="text-xs text-white font-medium">{v}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="flex flex-col gap-2 flex-shrink-0">
-                  <button
-                    onClick={() => approve(p.contractId, p.payload.projectName)}
-                    className="btn-primary">
-                    <CheckCircle size={14} /> Approve
-                  </button>
-                  <button
-                    onClick={() => reject(p.contractId, p.payload.projectName)}
-                    className="btn-danger">
-                    <XCircle size={14} /> Reject
-                  </button>
+                  <div className="flex flex-col gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => approve(p.contractId, p.payload.projectName, p.payload.region)}
+                      className="btn-primary">
+                      <CheckCircle size={14} /> Approve
+                    </button>
+                    <button
+                      onClick={() => reject(p.contractId, p.payload.projectName)}
+                      className="btn-danger">
+                      <XCircle size={14} /> Reject
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* All other projects */}
