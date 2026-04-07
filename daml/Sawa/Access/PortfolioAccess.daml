@@ -1,0 +1,31 @@
+module Sawa.Access.PortfolioAccess where
+
+-- Controls which projects an investor can see
+template PortfolioAccess
+  with
+    admin : Party
+    investor : Party
+    region : Text
+    projectIds : [Text]
+  where
+    signatory admin
+    observer investor
+
+    key (admin, investor, region) : (Party, Party, Text)
+    maintainer key._1
+
+    choice GrantProjectAccess : ContractId PortfolioAccess
+      with projectId : Text
+      controller admin
+      do
+        create this with projectIds = projectId :: projectIds
+
+    choice RevokeProjectAccess : ContractId PortfolioAccess
+      with projectId : Text
+      controller admin
+      do
+        create this with projectIds = filter (/= projectId) projectIds
+
+    choice RevokeAll : ()
+      controller admin
+      do return ()

@@ -1,0 +1,30 @@
+module Sawa.Portfolio.RegionalPortfolio where
+
+-- Regional portfolio grouping
+template RegionalPortfolio
+  with
+    admin : Party
+    region : Text
+    description : Text
+    allocatedInvestors : [Party]
+  where
+    signatory admin
+    observer allocatedInvestors
+
+    key (admin, region) : (Party, Text)
+    maintainer key._1
+
+    -- Admin allocates an investor to this portfolio region
+    choice AllocateInvestor : ContractId RegionalPortfolio
+      with investor : Party
+      controller admin
+      do
+        assertMsg "Investor already allocated" (investor `notElem` allocatedInvestors)
+        create this with allocatedInvestors = investor :: allocatedInvestors
+
+    -- Admin removes an investor
+    choice RemoveInvestor : ContractId RegionalPortfolio
+      with investor : Party
+      controller admin
+      do
+        create this with allocatedInvestors = filter (/= investor) allocatedInvestors

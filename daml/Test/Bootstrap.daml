@@ -1,0 +1,88 @@
+module Test.Bootstrap where
+
+import Daml.Script
+import Sawa.Types
+import Sawa.Identity.UserRole
+import Sawa.Portfolio.RegionalPortfolio
+import Sawa.Asset.ProjectSPV
+import Sawa.Access.PortfolioAccess
+
+setup : Script ()
+setup = do
+  admin <- allocatePartyWithHint "Admin" (PartyIdHint "Admin")
+  operator <- allocatePartyWithHint "Operator" (PartyIdHint "Operator")
+  investor1 <- allocatePartyWithHint "Investor1" (PartyIdHint "Investor1")
+  investor2 <- allocatePartyWithHint "Investor2" (PartyIdHint "Investor2")
+  investor3 <- allocatePartyWithHint "Investor3" (PartyIdHint "Investor3")
+
+  submit admin do
+    createCmd UserRole with
+      admin; party = admin; fullName = "Platform Admin"; role = Admin
+      walletAddress = ""; kycStatus = KYCApproved
+      approvedRegions = ["South Africa", "East Africa", "West Africa"]
+
+  submit admin do
+    createCmd UserRole with
+      admin; party = operator; fullName = "Solar Operator"; role = Operator
+      walletAddress = ""; kycStatus = KYCApproved
+      approvedRegions = ["South Africa"]
+
+  submit admin do
+    createCmd UserRole with
+      admin; party = investor1; fullName = "Alice Chen"; role = Investor
+      walletAddress = ""; kycStatus = KYCApproved
+      approvedRegions = ["South Africa"]
+
+  -- Create regional portfolios
+  submit admin do
+    createCmd RegionalPortfolio with
+      admin; region = "South Africa"
+      description = "Southern African renewable energy projects"
+      allocatedInvestors = [investor1]
+
+  submit admin do
+    createCmd RegionalPortfolio with
+      admin; region = "East Africa"
+      description = "East African renewable energy projects"
+      allocatedInvestors = []
+
+  submit admin do
+    createCmd RegionalPortfolio with
+      admin; region = "West Africa"
+      description = "West African renewable energy projects"
+      allocatedInvestors = []
+
+  -- Operator proposes SPV (no trancheSize or totalFunding)
+  proposalCid <- submit operator do
+    createCmd SPVProposal with
+      operator; admin
+      projectId = "METALEX-001"
+      name = "METALEX 4MW Solar Farm"
+      description = "4MW solar PV installation in Mpumalanga, South Africa"
+      region = "South Africa"
+      ppaTariff = 0.12
+      yieldRate = 0.08
+      durationYears = 25
+      capacityMW = 4.0
+      offTakerName = "Eskom Holdings"
+      tariffEscalatorPct = 2.5
+      totalCapEx = 1200000.0
+      totalDebt = 0.0
+      devFeePct = 5.0
+      mgmtFeePct = 1.0
+      operatorEquityPct = 40.0
+      investorHurdleIRR = 12.0
+      annualOMCost = 24000.0
+
+  submit admin do
+    exerciseCmd proposalCid ApproveSPV
+
+  -- Grant project access to investor1 in South Africa
+  submit admin do
+    createCmd PortfolioAccess with
+      admin; investor = investor1
+      region = "South Africa"
+      projectIds = ["METALEX-001"]
+
+  debugRaw "=== Sawa-X Bootstrap Complete ==="
+  return ()

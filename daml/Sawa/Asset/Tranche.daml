@@ -1,0 +1,72 @@
+module Sawa.Asset.Tranche where
+
+import Sawa.Types
+import Sawa.Investment.Investment
+import Sawa.Token.SPVToken
+
+-- A single tranche with its own lifecycle
+template Tranche
+  with
+    admin : Party
+    operator : Party
+    investor : Party
+    projectId : Text
+    projectName : Text
+    region : Text
+    trancheIndex : Int
+    trancheSize : Decimal         -- Dynamic size set at creation
+    investedAmount : Decimal
+    status : TrancheStatus
+  where
+    signatory admin
+    observer investor, operator
+
+    key (admin, projectId <> "-T" <> show trancheIndex) : (Party, Text)
+    maintainer key._1
+
+    -- Investor invests
+    choice Invest : ContractId Tranche
+      with amount : Decimal
+      controller investor
+      do
+        assertMsg "Tranche not open" (status == TrancheAllocated)
+        assertMsg "Amount must be positive" (amount > 0.0)
+        let newAmount = investedAmount + amount
+        assertMsg "Exceeds tranche size" (newAmount <= trancheSize)
+        if newAmount == trancheSize
+          then create this with investedAmount = newAmount, status = TrancheFunded
+          else create this with investedAmount = newAmount
+
+    -- Investor clicks Done — close tranche with whatever was invested
+    choice CompleteTranche : (ContractId CompletedInvestment, ContractId SPVToken)
+      controller investor
+      do
+        assertMsg "Must have invested" (investedAmount > 0.0)
+        assertMsg "Must be allocated or funded" (status == TrancheAllocated || status == TrancheFunded)
+        let finalStatus = TrancheFunded
+        invCid <- create CompletedInvestment with
+          admin; investor; operator; projectId; projectName
+          trancheIndex; amount = investedAmount
+        tokCid <- create SPVToken with
+          admin; investor; projectId; projectName
+          trancheIndex; tokenAmount = investedAmount; yieldRate = 0.08
+        return (invCid, tokCid)
+
+    -- Operator moves tranche lifecycle
+    choice MoveToConstruction : ContractId Tranche
+      controller operator
+      do
+        assertMsg "Must be Funded" (status == TrancheFunded)
+        create this with status = TrancheConstruction
+
+    choice MoveToOperational : ContractId Tranche
+      controller operator
+      do
+        assertMsg "Must be Construction" (status == TrancheConstruction)
+        create this with status = TrancheOperational
+
+    choice CloseTranche : ContractId Tranche
+      controller operator
+      do
+        assertMsg "Must be Operational" (status == TrancheOperational)
+        create this with status = TrancheClosed

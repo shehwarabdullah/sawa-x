@@ -1,0 +1,90 @@
+module Sawa.Registry.ProjectRegistry where
+
+-- Virtual Data Room (VDR) & PPA metadata for investor-grade projects
+-- This data must be submitted before a project can move from Proposed → Approved
+
+template ProjectRegistry
+  with
+    admin : Party
+    operator : Party
+    projectId : Text
+    -- A. Core PPA & Revenue Logic
+    offTakerName : Text
+    offTakerCreditRating : Text       -- e.g. "AA", "BBB+"
+    tariffCentsPerKWh : Decimal       -- e.g. 12.0
+    tariffEscalatorPct : Decimal      -- annual escalator e.g. 2.5
+    minGuaranteedCapacityMW : Decimal -- performance guarantee threshold
+    liquidatedDamagesPerMW : Decimal  -- penalty if below threshold
+    deemedEnergyEnabled : Bool        -- curtailment payment logic
+    ppaTermYears : Int                -- e.g. 25
+    -- B. Project Technical Metadata
+    capacityMW : Decimal              -- e.g. 4.0
+    epcContractor : Text
+    epcMilestones : Text              -- JSON or comma-separated milestones
+    annualOMCost : Decimal            -- fixed annual O&M
+    siteRightsVerified : Bool
+    gridConnectionApproved : Bool
+    -- C. Financial Structure
+    totalCapEx : Decimal              -- total project cost
+    totalDebt : Decimal               -- senior debt if any
+    taxEquity : Decimal               -- tax equity if any
+    devFeePct : Decimal               -- dev fee % of capex (e.g. 5.0)
+    mgmtFeePct : Decimal              -- asset mgmt fee % of gross revenue (e.g. 1.0)
+    operatorEquityPct : Decimal       -- target operator equity (e.g. 40.0)
+    investorHurdleIRR : Decimal       -- preferred return hurdle (e.g. 12.0)
+    -- D. Approval
+    vdrComplete : Bool
+    approvedByAdmin : Bool
+  where
+    signatory operator
+    observer admin
+
+    key (operator, projectId) : (Party, Text)
+    maintainer key._1
+
+    -- Admin marks VDR as complete and approved
+    choice ApproveVDR : ContractId ProjectRegistry
+      controller admin
+      do
+        assertMsg "Site rights must be verified" siteRightsVerified
+        assertMsg "Grid connection must be approved" gridConnectionApproved
+        create this with vdrComplete = True, approvedByAdmin = True
+
+    -- Operator updates VDR data
+    choice UpdateVDR : ContractId ProjectRegistry
+      with
+        newOffTakerName : Text
+        newOffTakerCreditRating : Text
+        newTariffCentsPerKWh : Decimal
+        newTariffEscalatorPct : Decimal
+        newCapacityMW : Decimal
+        newTotalCapEx : Decimal
+        newTotalDebt : Decimal
+        newDevFeePct : Decimal
+        newMgmtFeePct : Decimal
+        newInvestorHurdleIRR : Decimal
+        newOperatorEquityPct : Decimal
+      controller operator
+      do
+        assertMsg "Cannot update after approval" (not approvedByAdmin)
+        create this with
+          offTakerName = newOffTakerName
+          offTakerCreditRating = newOffTakerCreditRating
+          tariffCentsPerKWh = newTariffCentsPerKWh
+          tariffEscalatorPct = newTariffEscalatorPct
+          capacityMW = newCapacityMW
+          totalCapEx = newTotalCapEx
+          totalDebt = newTotalDebt
+          devFeePct = newDevFeePct
+          mgmtFeePct = newMgmtFeePct
+          investorHurdleIRR = newInvestorHurdleIRR
+          operatorEquityPct = newOperatorEquityPct
+
+    -- Calculate funding target: CapEx - Debt - TaxEquity / (1 - OperatorEquity%)
+    nonconsuming choice CalcFundingTarget : Decimal
+      controller operator
+      do
+        let netCapEx = totalCapEx - totalDebt - taxEquity
+            investorShare = 1.0 - (operatorEquityPct / 100.0)
+            target = if investorShare > 0.0 then netCapEx / investorShare else netCapEx
+        return target

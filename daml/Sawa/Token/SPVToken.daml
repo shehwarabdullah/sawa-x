@@ -1,0 +1,15 @@
+module Sawa.Token.SPVToken where
+
+-- Yield-bearing token minted when investment completes
+template SPVToken
+  with
+    admin : Party
+    investor : Party
+    projectId : Text
+    projectName : Text
+    trancheIndex : Int
+    tokenAmount : Decimal
+    yieldRate : Decimal
+  where
+    signatory admin
+    observer investor

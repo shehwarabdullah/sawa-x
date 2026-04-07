@@ -1,0 +1,126 @@
+module Sawa.Asset.ProjectSPV where
+
+import Sawa.Types
+
+-- Operator proposes a new SPV project (no tranche size or total raise - those are dynamic per tranche)
+template SPVProposal
+  with
+    operator : Party
+    admin : Party
+    projectId : Text
+    name : Text
+    description : Text
+    region : Text                   -- Linked to RegionalPortfolio on-chain
+    ppaTariff : Decimal
+    yieldRate : Decimal
+    durationYears : Int
+    -- VDR / PPA fields
+    capacityMW : Decimal
+    offTakerName : Text
+    tariffEscalatorPct : Decimal
+    totalCapEx : Decimal
+    totalDebt : Decimal
+    devFeePct : Decimal
+    mgmtFeePct : Decimal
+    operatorEquityPct : Decimal
+    investorHurdleIRR : Decimal
+    annualOMCost : Decimal
+  where
+    signatory operator
+    observer admin
+
+    choice ApproveSPV : ContractId ProjectSPV
+      controller admin
+      do
+        create ProjectSPV with
+          admin
+          operator
+          projectId
+          name
+          description
+          region
+          totalCapitalAllocated = 0.0
+          totalCapitalFunded = 0.0
+          trancheCount = 0
+          status = Active
+          ppaTariff
+          yieldRate
+          durationYears
+          capacityMW
+          offTakerName
+          tariffEscalatorPct
+          totalCapEx
+          totalDebt
+          devFeePct
+          mgmtFeePct
+          operatorEquityPct
+          investorHurdleIRR
+          annualOMCost
+          devFeeCollected = 0.0
+
+    choice RejectSPV : ()
+      controller admin
+      do return ()
+
+-- Active project — totalCapitalAllocated/Funded grow as tranches are created and funded
+template ProjectSPV
+  with
+    admin : Party
+    operator : Party
+    projectId : Text
+    name : Text
+    description : Text
+    region : Text                     -- Links to RegionalPortfolio
+    totalCapitalAllocated : Decimal   -- Sum of all tranche sizes created
+    totalCapitalFunded : Decimal      -- Sum of all funded tranche amounts
+    trancheCount : Int                -- Number of tranches created
+    status : SPVStatus
+    ppaTariff : Decimal
+    yieldRate : Decimal
+    durationYears : Int
+    capacityMW : Decimal
+    offTakerName : Text
+    tariffEscalatorPct : Decimal
+    totalCapEx : Decimal
+    totalDebt : Decimal
+    devFeePct : Decimal
+    mgmtFeePct : Decimal
+    operatorEquityPct : Decimal
+    investorHurdleIRR : Decimal
+    annualOMCost : Decimal
+    devFeeCollected : Decimal
+  where
+    signatory admin
+    observer operator
+
+    key (admin, projectId) : (Party, Text)
+    maintainer key._1
+
+    -- Called when a new tranche is created to update project totals
+    nonconsuming choice RecordTrancheCreated : ContractId ProjectSPV
+      with
+        trancheSize : Decimal
+      controller admin
+      do
+        archive self
+        create this with
+          totalCapitalAllocated = totalCapitalAllocated + trancheSize
+          trancheCount = trancheCount + 1
+
+    -- Called when a tranche is funded to update project funded total
+    nonconsuming choice RecordTrancheFunded : ContractId ProjectSPV
+      with
+        amount : Decimal
+      controller admin
+      do
+        let devFee = amount * (devFeePct / 100.0)
+        archive self
+        create this with
+          totalCapitalFunded = totalCapitalFunded + amount
+          devFeeCollected = devFeeCollected + devFee
+
+    choice MoveToCompleted : ContractId ProjectSPV
+      controller operator
+      do
+        assertMsg "Must be Active" (status == Active)
+        create this with status = Completed

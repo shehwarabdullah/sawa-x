@@ -1,0 +1,146 @@
+module Sawa.Settlement.WaterfallSettlement where
+
+-- Waterfall Settlement Service
+-- Implements: OpEx → Debt → Preferred Return → Sponsor Flip
+
+data WaterfallPhase
+  = CapitalRecovery      -- Phase 1: 100% to investor until principal returned
+  | PreferredReturn      -- Phase 2: 100% to investor until IRR hurdle met
+  | CatchUpFlip          -- Phase 3: flipped split (e.g. 60/40 or 80/20)
+    deriving (Eq, Show, Ord)
+
+-- Per-project settlement state
+template WaterfallState
+  with
+    admin : Party
+    operator : Party
+    investor : Party
+    projectId : Text
+    -- Capital tracking
+    totalInvested : Decimal          -- original principal
+    totalReturnedToInvestor : Decimal
+    totalReturnedToOperator : Decimal
+    -- Fee structure
+    devFeePct : Decimal              -- e.g. 5.0 (deducted at funding)
+    devFeeCollected : Decimal
+    mgmtFeePct : Decimal             -- e.g. 1.0 of gross revenue
+    mgmtFeeCollected : Decimal
+    annualOMCost : Decimal
+    omDeducted : Decimal
+    debtServiceAnnual : Decimal
+    debtDeducted : Decimal
+    -- IRR / hurdle
+    hurdleIRRPct : Decimal           -- e.g. 12.0
+    currentIRRPct : Decimal          -- estimated running IRR
+    -- Flip structure
+    preFlipInvestorPct : Decimal     -- e.g. 80.0 (before hurdle)
+    postFlipInvestorPct : Decimal    -- e.g. 20.0 (after flip)
+    postFlipOperatorPct : Decimal    -- e.g. 80.0 (after flip)
+    phase : WaterfallPhase
+    -- Epoch tracking
+    epochCount : Int
+    lastSettlementDate : Text
+  where
+    signatory admin
+    observer operator, investor
+
+    key (admin, projectId, investor) : (Party, Text, Party)
+    maintainer key._1
+
+    -- Process revenue through the waterfall
+    choice SettleRevenue : ContractId WaterfallState
+      with
+        grossRevenue : Decimal
+        settlementDate : Text
+      controller admin
+      do
+        assertMsg "Revenue must be positive" (grossRevenue > 0.0)
+
+        -- Level 1: O&M deduction
+        let omDeduction = annualOMCost / 12.0  -- monthly
+            afterOM = grossRevenue - omDeduction
+
+        -- Level 2: Management Fee (top of waterfall)
+        let mgmtFee = grossRevenue * (mgmtFeePct / 100.0)
+            afterMgmt = afterOM - mgmtFee
+
+        -- Level 3: Debt Service
+        let debtPayment = debtServiceAnnual / 12.0
+            afterDebt = if afterMgmt > debtPayment then afterMgmt - debtPayment else 0.0
+            actualDebt = if afterMgmt > debtPayment then debtPayment else afterMgmt
+
+        -- Level 4: Distribution based on phase
+        let distributable = if afterDebt > 0.0 then afterDebt else 0.0
+            newTotalReturned = totalReturnedToInvestor
+            principalOutstanding = totalInvested - totalReturnedToInvestor
+
+        -- Determine splits based on phase
+        let (toInvestor, toOperator, newPhase) =
+              if phase == CapitalRecovery then
+                -- 100% to investor until principal recovered
+                if principalOutstanding > distributable
+                  then (distributable, 0.0, CapitalRecovery)
+                  else (principalOutstanding, distributable - principalOutstanding, PreferredReturn)
+              else if phase == PreferredReturn then
+                -- Preferred split until IRR hurdle
+                let invShare = distributable * (preFlipInvestorPct / 100.0)
+                    opShare = distributable - invShare
+                    estIRR = if totalInvested > 0.0
+                      then ((totalReturnedToInvestor + invShare - totalInvested) / totalInvested) * 100.0
+                      else 0.0
+                in if estIRR >= hurdleIRRPct
+                  then (distributable * (postFlipInvestorPct / 100.0), distributable * (postFlipOperatorPct / 100.0), CatchUpFlip)
+                  else (invShare, opShare, PreferredReturn)
+              else
+                -- Post-flip: operator-favorable split
+                let invShare = distributable * (postFlipInvestorPct / 100.0)
+                    opShare = distributable * (postFlipOperatorPct / 100.0)
+                in (invShare, opShare, CatchUpFlip)
+
+        create this with
+          totalReturnedToInvestor = totalReturnedToInvestor + toInvestor
+          totalReturnedToOperator = totalReturnedToOperator + toOperator
+          mgmtFeeCollected = mgmtFeeCollected + mgmtFee
+          omDeducted = omDeducted + omDeduction
+          debtDeducted = debtDeducted + actualDebt
+          phase = newPhase
+          epochCount = epochCount + 1
+          lastSettlementDate = settlementDate
+          currentIRRPct = if totalInvested > 0.0
+            then ((totalReturnedToInvestor + toInvestor - totalInvested) / totalInvested) * 100.0
+            else 0.0
+
+-- Operator token representing performance carry / synthetic equity
+template OperatorToken
+  with
+    admin : Party
+    operator : Party
+    projectId : Text
+    tokenClass : Text          -- "ClassB" or "Performance"
+    ownershipPct : Decimal     -- e.g. 40.0
+    vestingMilestone : Text    -- e.g. "COD", "6mo-uptime", "12mo-uptime"
+    vested : Bool
+    mintedAt : Text
+  where
+    signatory admin
+    observer operator
+
+    -- Admin vests the token upon milestone completion
+    choice VestToken : ContractId OperatorToken
+      controller admin
+      do
+        create this with vested = True
+
+-- Dev fee disbursement record
+template DevFeeDisbursement
+  with
+    admin : Party
+    operator : Party
+    projectId : Text
+    totalCapEx : Decimal
+    devFeePct : Decimal
+    devFeeAmount : Decimal     -- computed: totalCapEx * devFeePct / 100
+    disbursedAt : Text
+  where
+    signatory admin
+    observer operator

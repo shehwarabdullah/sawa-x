@@ -1,0 +1,5 @@
+val admin = participant1.parties.enable("Admin")
+val operator = participant1.parties.enable("Operator")
+val investor1 = participant1.parties.enable("Investor1")
+val investor2 = participant1.parties.enable("Investor2")
+val investor3 = participant1.parties.enable("Investor3")

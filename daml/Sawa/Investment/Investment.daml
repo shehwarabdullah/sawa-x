@@ -1,0 +1,15 @@
+module Sawa.Investment.Investment where
+
+-- Permanent record of a completed investment
+template CompletedInvestment
+  with
+    admin : Party
+    investor : Party
+    operator : Party
+    projectId : Text
+    projectName : Text
+    trancheIndex : Int
+    amount : Decimal
+  where
+    signatory admin
+    observer investor, operator

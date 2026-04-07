@@ -1,0 +1,28 @@
+module Sawa.Yield.ProductionReport where
+
+-- Production data updated by operator
+template ProductionReport
+  with
+    admin : Party
+    operator : Party
+    projectId : Text
+    reportDate : Text
+    energyProducedKWh : Decimal
+    revenueGenerated : Decimal
+    observers : [Party]
+  where
+    signatory operator
+    observer admin :: observers
+
+    -- Operator updates production data
+    choice UpdateProduction : ContractId ProductionReport
+      with
+        newDate : Text
+        newEnergy : Decimal
+        newRevenue : Decimal
+      controller operator
+      do
+        create this with
+          reportDate = newDate
+          energyProducedKWh = newEnergy
+          revenueGenerated = newRevenue

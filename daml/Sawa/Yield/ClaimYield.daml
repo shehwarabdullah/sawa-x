@@ -1,0 +1,21 @@
+module Sawa.Yield.ClaimYield where
+
+-- Yield available for investor to claim
+template ClaimYield
+  with
+    admin : Party
+    investor : Party
+    operator : Party
+    projectId : Text
+    claimableAmount : Decimal
+    claimed : Bool
+  where
+    signatory admin
+    observer investor, operator
+
+    choice Claim : ContractId ClaimYield
+      controller investor
+      do
+        assertMsg "Already claimed" (not claimed)
+        assertMsg "Nothing to claim" (claimableAmount > 0.0)
+        create this with claimed = True

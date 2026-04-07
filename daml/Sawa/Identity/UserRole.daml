@@ -1,0 +1,64 @@
+module Sawa.Identity.UserRole where
+
+import Sawa.Types
+
+-- Investor submits KYC request
+template KYCRequest
+  with
+    investor : Party
+    admin : Party
+    fullName : Text
+    walletAddress : Text
+    requestedRegions : [Text]
+  where
+    signatory investor
+    observer admin
+
+    choice ApproveKYC : ContractId UserRole
+      controller admin
+      do
+        create UserRole with
+          admin
+          party = investor
+          fullName
+          role = Investor
+          walletAddress
+          kycStatus = KYCApproved
+          approvedRegions = requestedRegions
+
+    choice RejectKYC : ContractId RejectedKYC
+      controller admin
+      do
+        create RejectedKYC with
+          admin
+          investor
+          fullName
+          reason = "KYC rejected by admin"
+
+-- Active user on the platform
+template UserRole
+  with
+    admin : Party
+    party : Party
+    fullName : Text
+    role : RoleType
+    walletAddress : Text
+    kycStatus : KYCStatus
+    approvedRegions : [Text]
+  where
+    signatory admin
+    observer party
+
+    key (admin, party) : (Party, Party)
+    maintainer key._1
+
+-- Rejected KYC record
+template RejectedKYC
+  with
+    admin : Party
+    investor : Party
+    fullName : Text
+    reason : Text
+  where
+    signatory admin
+    observer investor

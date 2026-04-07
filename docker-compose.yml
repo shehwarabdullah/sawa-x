@@ -1,0 +1,20 @@
+version: "3.9"
+services:
+  backend:
+    build: ./backend
+    ports: ["3001:3001"]
+    environment:
+      DAML_API: http://json-api:7575
+    depends_on: [json-api]
+
+  json-api:
+    image: digitalasset/daml-json-api:2.10.3
+    ports: ["7575:7575"]
+    command: ["--ledger-host", "canton", "--ledger-port", "6865", "--http-port", "7575", "--allow-insecure-tokens"]
+    depends_on: [canton]
+
+  canton:
+    image: digitalasset/canton-open-source:2.10.3
+    ports: ["6865:6865"]
+    volumes:
+      - ./infra/canton:/canton-config

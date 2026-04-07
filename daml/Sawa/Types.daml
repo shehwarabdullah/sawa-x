@@ -1,0 +1,27 @@
+module Sawa.Types where
+
+data SPVStatus
+  = Proposed
+  | Active          -- Project is active once approved and tranches are being created
+  | Completed
+    deriving (Eq, Show, Ord)
+
+data TrancheStatus
+  = TrancheAllocated      -- Investor assigned, waiting for funding
+  | TrancheFunded         -- Fully funded or investor pressed Done
+  | TrancheConstruction   -- Under construction
+  | TrancheOperational    -- Producing energy
+  | TrancheClosed         -- Completed / ended
+    deriving (Eq, Show, Ord)
+
+data KYCStatus
+  = KYCPending
+  | KYCApproved
+  | KYCRejected
+    deriving (Eq, Show, Ord)
+
+data RoleType
+  = Admin
+  | Operator
+  | Investor
+    deriving (Eq, Show, Ord)

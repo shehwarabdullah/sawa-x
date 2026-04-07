@@ -1,0 +1,11 @@
+sdk-version: 2.10.3
+name: sawa-x-demo
+version: 0.0.1
+source: daml
+dependencies:
+  - daml-prim
+  - daml-stdlib
+  - daml-script
+  - daml-trigger
+build-options:
+  - --target=1.15
